@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MetaHead Arena - Head Ball Game</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="container">
+                <div class="logo">
+                    <i class="fas fa-futbol"></i>
+                    <h1>MetaHead Arena</h1>
+                </div>
+                <div class="connection-indicator">
+                    <div class="status-dot" id="statusDot"></div>
+                    <span id="connectionStatus">Connecting...</span>
+                </div>
+            </div>
+        </header>
+
+        <main class="main">
+            <div class="container">
+                <!-- Game Status Panel -->
+                <section class="status-panel">
+                    <div class="player-info">
+                        <div class="info-card">
+                            <h3><i class="fas fa-user"></i> Player Info</h3>
+                            <div class="info-grid">
+                                <div class="info-item">
+                                    <label>Player ID:</label>
+                                    <span id="playerId">None</span>
+                                </div>
+                                <div class="info-item">
+                                    <label>Room:</label>
+                                    <span id="roomId">None</span>
+                                </div>
+                                <div class="info-item">
+                                    <label>Status:</label>
+                                    <span id="readyStatus" class="status-badge">Not Ready</span>
+                                </div>
+                                <div class="info-item">
+                                    <label>Players:</label>
+                                    <span id="playersInRoom">0/2</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="action-panel">
+                        <div class="button-group">
+                            <button class="btn btn-primary" id="joinGameBtn">
+                                <i class="fas fa-sign-in-alt"></i> Join Game
+                            </button>
+                            <button class="btn btn-secondary" id="findMatchBtn">
+                                <i class="fas fa-search"></i> Find Match
+                            </button>
+                            <button class="btn btn-warning" id="toggleReadyBtn">
+                                <i class="fas fa-check-circle"></i> Ready Up!
+                            </button>
+                            <button class="btn btn-danger" id="leaveRoomBtn">
+                                <i class="fas fa-sign-out-alt"></i> Leave Room
+                            </button>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Game Arena -->
+                <section class="game-arena">
+                    <div class="scoreboard">
+                        <div class="score-item">
+                            <span class="team">Player 1</span>
+                            <span class="score" id="player1Score">0</span>
+                        </div>
+                        <div class="game-timer">
+                            <i class="fas fa-clock"></i>
+                            <span id="gameTime">2:00</span>
+                        </div>
+                        <div class="score-item">
+                            <span class="team">Player 2</span>
+                            <span class="score" id="player2Score">0</span>
+                        </div>
+                    </div>
+
+                    <div class="game-field" id="gameField">
+                        <!-- Field markings -->
+                        <div class="field-lines">
+                            <div class="center-line"></div>
+                            <div class="center-circle"></div>
+                        </div>
+                        
+                        <!-- Goals -->
+                        <div class="goal goal-left">
+                            <div class="goal-net"></div>
+                        </div>
+                        <div class="goal goal-right">
+                            <div class="goal-net"></div>
+                        </div>
+                        
+                        <!-- Players -->
+                        <div class="player player1" id="player1Sprite">
+                            <div class="player-avatar">
+                                <i class="fas fa-running"></i>
+                            </div>
+                            <div class="player-name">P1</div>
+                        </div>
+                        <div class="player player2" id="player2Sprite">
+                            <div class="player-avatar">
+                                <i class="fas fa-running"></i>
+                            </div>
+                            <div class="player-name">P2</div>
+                        </div>
+                        
+                        <!-- Ball -->
+                        <div class="ball" id="ballSprite">
+                            <i class="fas fa-futbol"></i>
+                        </div>
+                    </div>
+
+                    <!-- Controls -->
+                    <div class="controls-panel">
+                        <div class="controls-section">
+                            <h3><i class="fas fa-gamepad"></i> Game Controls</h3>
+                            <div class="controls-grid">
+                                <button class="control-btn" id="moveLeftBtn" data-key="A">
+                                    <i class="fas fa-arrow-left"></i>
+                                    <span>Move Left</span>
+                                </button>
+                                <button class="control-btn" id="jumpBtn" data-key="W">
+                                    <i class="fas fa-arrow-up"></i>
+                                    <span>Jump</span>
+                                </button>
+                                <button class="control-btn" id="moveRightBtn" data-key="D">
+                                    <i class="fas fa-arrow-right"></i>
+                                    <span>Move Right</span>
+                                </button>
+                                <button class="control-btn kick-btn" id="kickBtn" data-key="S">
+                                    <i class="fas fa-futbol"></i>
+                                    <span>Kick Ball</span>
+                                </button>
+                            </div>
+                            <div class="controls-hint">
+                                <i class="fas fa-keyboard"></i>
+                                Use WASD keys or Arrow keys to control your player
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Debug Panel -->
+                <section class="debug-panel">
+                    <div class="panel-header">
+                        <h3><i class="fas fa-bug"></i> Debug Console</h3>
+                        <div class="panel-actions">
+                            <button class="btn btn-sm" id="clearLogBtn">
+                                <i class="fas fa-trash"></i> Clear
+                            </button>
+                        </div>
+                    </div>
+                    <div class="log-container">
+                        <div class="log" id="eventLog"></div>
+                    </div>
+                </section>
+
+                <!-- API Testing -->
+                <section class="api-panel">
+                    <div class="panel-header">
+                        <h3><i class="fas fa-code"></i> API Testing</h3>
+                    </div>
+                    <div class="api-buttons">
+                        <button class="btn btn-outline" id="testStatsBtn">
+                            <i class="fas fa-chart-line"></i> Test Stats
+                        </button>
+                        <button class="btn btn-outline" id="testRoomsBtn">
+                            <i class="fas fa-door-open"></i> Test Rooms
+                        </button>
+                        <button class="btn btn-outline" id="testPlayersBtn">
+                            <i class="fas fa-users"></i> Test Players
+                        </button>
+                        <button class="btn btn-outline" id="createRoomBtn">
+                            <i class="fas fa-plus"></i> Create Room
+                        </button>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="game.js"></script>
+</body>
+</html> 
