@@ -224,43 +224,140 @@ function initializeSocket(server) {
       origin: "*",
       methods: ["GET", "POST"],
     },
+    // Enhanced Socket.IO configuration for better performance
+    pingTimeout: 60000,
+    pingInterval: 25000,
+    upgradeTimeout: 10000,
+    allowUpgrades: true,
+    perMessageDeflate: false, // Disable compression for lower latency
+    httpCompression: false,
   });
 
   // Connect GameService to Socket.IO for 60fps broadcasting
   gameService.setSocketIO(io);
 
+  // Performance monitoring
+  let connectionCount = 0;
+  
   io.on("connection", (socket) => {
-    console.log(`Player connected: ${socket.id}`);
+    connectionCount++;
+    console.log(`Player connected: ${socket.id} (Total: ${connectionCount})`);
 
+    // Enhanced welcome with server info
     socket.emit("welcome", {
       message: "Welcome to MetaHead Arena! 1v1 Football Game",
       playerId: socket.id,
+      serverTime: Date.now(),
+      gameVersion: "1.0.0",
+      features: ["realtime-physics", "60fps-updates", "anti-cheat"]
     });
 
-    // Event handlers using individual functions
-    socket.on("join-game", (data) => handlePlayerJoin(socket, io, data));
-    socket.on("find-match", () => handleFindMatch(socket, io));
+    // Input rate limiting per socket
+    let inputCount = 0;
+    let lastInputReset = Date.now();
+    
+    const checkInputRate = () => {
+      const now = Date.now();
+      if (now - lastInputReset > 1000) { // Reset every second
+        inputCount = 0;
+        lastInputReset = now;
+      }
+      
+      inputCount++;
+      if (inputCount > 120) { // Max 120 inputs per second
+        socket.emit("error", { 
+          message: "Input rate limit exceeded", 
+          type: "RATE_LIMIT" 
+        });
+        return false;
+      }
+      return true;
+    };
+
+    // Enhanced event handlers with validation
+    socket.on("join-game", (data) => {
+      try {
+        if (!data || typeof data.username !== 'string') {
+          socket.emit("error", { message: "Invalid username", type: "VALIDATION_ERROR" });
+          return;
+        }
+        handlePlayerJoin(socket, io, data);
+      } catch (error) {
+        console.error(`Error in join-game:`, error);
+        socket.emit("error", { message: "Internal server error", type: "SERVER_ERROR" });
+      }
+    });
+
+    socket.on("find-match", () => {
+      try {
+        handleFindMatch(socket, io);
+      } catch (error) {
+        console.error(`Error in find-match:`, error);
+        socket.emit("error", { message: "Matchmaking error", type: "SERVER_ERROR" });
+      }
+    });
+
     socket.on("player-ready", () => handlePlayerReady(socket, io));
     socket.on("ready", () => handlePlayerReady(socket, io));
-    socket.on("game-action", (data) => handleGameAction(socket, io, data));
-    socket.on("player-input", (data) => handlePlayerInput(socket, io, data));
-    
-    // Specific movement events
-    socket.on("move-left", (data) => handlePlayerMovement(socket, "move-left", data));
-    socket.on("move-right", (data) => handlePlayerMovement(socket, "move-right", data));
-    socket.on("jump", (data) => handlePlayerMovement(socket, "jump", data));
-    socket.on("kick", (data) => handlePlayerKick(socket, io, data));
-    socket.on("stop-move", (data) => handlePlayerMovement(socket, "stop", data));
+
+    // Enhanced input handling with rate limiting
+    const inputEvents = ["move-left", "move-right", "jump", "kick", "stop-move"];
+    inputEvents.forEach(eventName => {
+      socket.on(eventName, (data) => {
+        if (!checkInputRate()) return;
+        
+        const actionName = eventName === "stop-move" ? "stop" : eventName;
+        handlePlayerMovement(socket, actionName, data || { pressed: true });
+      });
+    });
+
+    // Generic player input handler
+    socket.on("player-input", (data) => {
+      if (!checkInputRate()) return;
+      if (!data || !data.action) {
+        socket.emit("error", { message: "Invalid input data", type: "VALIDATION_ERROR" });
+        return;
+      }
+      handlePlayerInput(socket, io, data);
+    });
 
     // Room management
     socket.on("leave-room", () => handleLeaveRoom(socket, io));
     
-    // Connection management
-    socket.on("disconnect", () => handleDisconnect(socket, io));
+    // Connection management with cleanup
+    socket.on("disconnect", (reason) => {
+      connectionCount--;
+      console.log(`Player disconnected: ${socket.id} (Reason: ${reason}, Total: ${connectionCount})`);
+      handleDisconnect(socket, io);
+    });
+
     socket.on("error", (error) => {
       console.error(`Socket error from ${socket.id}:`, error);
     });
+
+    // Heartbeat for connection quality monitoring
+    socket.on("ping", (callback) => {
+      if (typeof callback === 'function') {
+        callback(Date.now());
+      }
+    });
   });
+
+  // Server-side performance monitoring
+  setInterval(() => {
+    const stats = {
+      connections: connectionCount,
+      rooms: gameService.gameRooms.size,
+      activeGames: Array.from(gameService.gameRooms.values())
+        .filter(room => room.status === "playing").length,
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
+      timestamp: Date.now()
+    };
+    
+    // Emit to admin clients if needed
+    io.emit("server-stats", stats);
+  }, 30000); // Every 30 seconds
 
   return io;
 }

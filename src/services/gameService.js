@@ -592,68 +592,100 @@ class GameService {
   // Player movement input handler
   handlePlayerInput(socketId, inputData) {
     const player = this.getPlayer(socketId);
-    if (!player) {
-      return { success: false, reason: "Player not found" };
+    if (!player || !player.currentRoom) {
+      return { success: false, reason: "Player not in game" };
     }
 
     const room = this.getRoom(player.currentRoom);
     if (!room || !room.gameState.isActive) {
-      return { success: false, reason: "No active game" };
+      return { success: false, reason: "Game not active" };
     }
 
-    // Determine which player this is (player1 or player2)
-    const playerIndex = room.players.findIndex((p) => p.id === socketId);
-    if (playerIndex === -1) {
-      return { success: false, reason: "Player not in room" };
+    // Get player position (player1 or player2)
+    const playerPosition = room.players.find(p => p.id === socketId)?.position;
+    if (!playerPosition) {
+      return { success: false, reason: "Player position not found" };
     }
 
-    const playerKey = playerIndex === 0 ? "player1" : "player2";
-    const playerState = room.gameState.players[playerKey];
+    const gamePlayer = room.gameState.players[playerPosition];
+    const physics = room.settings.physics;
 
-    // Handle different input actions
+    // Input validation with anti-cheat measures
+    const currentTime = Date.now();
+    if (!player.lastInputTime) player.lastInputTime = 0;
+    
+    // Prevent input spam (max 120 inputs per second)
+    if (currentTime - player.lastInputTime < 8.33) {
+      return { success: false, reason: "Input rate limit" };
+    }
+    player.lastInputTime = currentTime;
+
+    // Enhanced input handling with buffering
+    let inputProcessed = false;
+    let kickResult = null;
+
     switch (inputData.action) {
       case "move-left":
         if (inputData.pressed) {
-          playerState.direction = "left";
-          playerState.velocityX = -room.settings.physics.playerSpeed;
+          gamePlayer.direction = "left";
+          gamePlayer.velocityX = Math.max(-physics.playerSpeed, gamePlayer.velocityX - physics.playerSpeed * 0.3);
         }
+        inputProcessed = true;
         break;
 
       case "move-right":
         if (inputData.pressed) {
-          playerState.direction = "right";
-          playerState.velocityX = room.settings.physics.playerSpeed;
+          gamePlayer.direction = "right";
+          gamePlayer.velocityX = Math.min(physics.playerSpeed, gamePlayer.velocityX + physics.playerSpeed * 0.3);
         }
+        inputProcessed = true;
         break;
 
       case "jump":
-        if (inputData.pressed && playerState.isOnGround) {
-          playerState.isJumping = true;
-          playerState.isOnGround = false;
-          playerState.velocityY = -room.settings.physics.jumpPower; // Negative = up
+        if (inputData.pressed && gamePlayer.isOnGround && !gamePlayer.isJumping) {
+          gamePlayer.velocityY = -physics.jumpPower;
+          gamePlayer.isJumping = true;
+          gamePlayer.isOnGround = false;
+          console.log(`${playerPosition} jumped with velocity ${-physics.jumpPower}`);
         }
+        inputProcessed = true;
+        break;
+
+      case "kick":
+        if (inputData.pressed) {
+          // Check if player is close enough to ball for kick
+          const ball = room.gameState.ball;
+          const distanceX = Math.abs(gamePlayer.x - ball.x);
+          const distanceY = Math.abs(gamePlayer.y - ball.y);
+          const kickRange = 40; // pixels
+
+          if (distanceX <= kickRange && distanceY <= kickRange) {
+            // Anti-spam: 300ms cooldown between kicks
+            if (!gamePlayer.lastKickTime || currentTime - gamePlayer.lastKickTime > 300) {
+              kickResult = this.executeKick(room, playerPosition, gamePlayer, ball);
+              gamePlayer.lastKickTime = currentTime;
+            }
+          }
+        }
+        inputProcessed = true;
         break;
 
       case "stop":
-        if (inputData.direction === "horizontal") {
-          playerState.direction = "idle";
-          playerState.velocityX = 0;
-        }
+        gamePlayer.direction = "idle";
+        gamePlayer.velocityX *= 0.7; // Quick deceleration
+        inputProcessed = true;
         break;
 
       default:
-        return { success: false, reason: "Unknown input action" };
+        return { success: false, reason: "Invalid action" };
     }
 
-    // Update last update timestamp for 60fps sync
-    room.lastUpdate = Date.now();
-
     return {
-      success: true,
+      success: inputProcessed,
       player: player,
-      playerKey: playerKey,
-      playerState: playerState,
-      room: room,
+      gamePlayer: gamePlayer,
+      kickResult: kickResult,
+      timestamp: currentTime
     };
   }
 
@@ -740,24 +772,42 @@ class GameService {
 
   handleGoal(room, scoringPlayer) {
     // Update score
-    room.gameState.score[scoringPlayer]++;
+    room.gameState.score[scoringPlayer] += 1;
 
-    // Record goal event
-    const goalEvent = {
-      type: "goal",
-      player: scoringPlayer,
-      time: room.settings.rules.matchDuration - room.gameState.gameTime,
-      timestamp: Date.now(),
-    };
+    // **IMMEDIATE POSITION RESET AFTER GOAL**
+    // Reset both players to starting positions
+    room.gameState.players.player1.x = 150;
+    room.gameState.players.player1.y = 320;
+    room.gameState.players.player1.velocityX = 0;
+    room.gameState.players.player1.velocityY = 0;
+    room.gameState.players.player1.isJumping = false;
+    room.gameState.players.player1.isOnGround = true;
+    room.gameState.players.player1.direction = "idle";
 
-    room.gameState.gameEvents.push(goalEvent);
-    room.gameState.lastGoal = goalEvent;
+    room.gameState.players.player2.x = 650;
+    room.gameState.players.player2.y = 320;
+    room.gameState.players.player2.velocityX = 0;
+    room.gameState.players.player2.velocityY = 0;
+    room.gameState.players.player2.isJumping = false;
+    room.gameState.players.player2.isOnGround = true;
+    room.gameState.players.player2.direction = "idle";
 
     // Reset ball to center
     this.resetBallPosition(room);
 
+    // Create goal event
+    const goalEvent = {
+      scorer: scoringPlayer,
+      time: Date.now(),
+      newScore: { ...room.gameState.score },
+      positionsReset: true
+    };
+
+    // Add to game events
+    room.gameState.gameEvents.push(goalEvent);
+
     console.log(
-      `GOAL! ${scoringPlayer} scored! Score: ${room.gameState.score.player1}-${room.gameState.score.player2}`
+      `⚽ GOAL! ${scoringPlayer} scored! Score: ${room.gameState.score.player1}-${room.gameState.score.player2} (Positions reset)`
     );
 
     return {
@@ -1086,7 +1136,7 @@ class GameService {
     }
   }
 
-  // Real-time broadcasting
+  // Enhanced real-time broadcasting with delta compression
   broadcastGameState(roomId, updateResult) {
     if (!this.socketIO || !updateResult || !updateResult.gameState) {
       return;
@@ -1101,51 +1151,127 @@ class GameService {
       return;
     }
 
-    // Prepare optimized game state for frontend
-    const broadcastData = {
-      type: "game-state-update",
-      roomId: roomId,
-      timestamp: Date.now(),
-      gameState: {
-        players: {
-          player1: {
-            x: Math.round(gameState.players.player1.x * 10) / 10, // Round to 1 decimal
-            y: Math.round(gameState.players.player1.y * 10) / 10,
-            velocityX:
-              Math.round(gameState.players.player1.velocityX * 10) / 10,
-            velocityY:
-              Math.round(gameState.players.player1.velocityY * 10) / 10,
-            direction: gameState.players.player1.direction,
-            isJumping: gameState.players.player1.isJumping,
-            isOnGround: gameState.players.player1.isOnGround,
-          },
-          player2: {
-            x: Math.round(gameState.players.player2.x * 10) / 10,
-            y: Math.round(gameState.players.player2.y * 10) / 10,
-            velocityX:
-              Math.round(gameState.players.player2.velocityX * 10) / 10,
-            velocityY:
-              Math.round(gameState.players.player2.velocityY * 10) / 10,
-            direction: gameState.players.player2.direction,
-            isJumping: gameState.players.player2.isJumping,
-            isOnGround: gameState.players.player2.isOnGround,
-          },
-        },
-        ball: {
-          x: Math.round(gameState.ball.x * 10) / 10,
-          y: Math.round(gameState.ball.y * 10) / 10,
-          velocityX: Math.round(gameState.ball.velocityX * 10) / 10,
-          velocityY: Math.round(gameState.ball.velocityY * 10) / 10,
-          lastTouchedBy: gameState.ball.lastTouchedBy,
-        },
-        score: gameState.score,
-        gameTime: Math.round(gameState.gameTime * 10) / 10,
-        isActive: gameState.isActive,
-      },
+    // Delta compression - only send changed data
+    if (!room.lastBroadcastState) {
+      room.lastBroadcastState = {
+        players: { player1: {}, player2: {} },
+        ball: {},
+        score: { player1: 0, player2: 0 },
+        gameTime: 120
+      };
+    }
+
+    const lastState = room.lastBroadcastState;
+    const currentState = gameState;
+    
+    // Check what has changed (delta calculation)
+    const changes = {
+      players: {},
+      ball: {},
+      score: null,
+      gameTime: null
     };
 
-    // Broadcast to all players in the room
-    this.socketIO.to(roomId).emit("game-state-update", broadcastData);
+    // Player changes
+    ['player1', 'player2'].forEach(playerKey => {
+      const current = currentState.players[playerKey];
+      const last = lastState.players[playerKey];
+      
+      const playerChanges = {};
+      ['x', 'y', 'velocityX', 'velocityY', 'direction', 'isJumping', 'isOnGround'].forEach(prop => {
+        if (Math.abs(current[prop] - (last[prop] || 0)) > 0.1) { // Threshold for float comparison
+          playerChanges[prop] = Math.round(current[prop] * 10) / 10;
+        }
+      });
+      
+      if (Object.keys(playerChanges).length > 0) {
+        changes.players[playerKey] = playerChanges;
+      }
+    });
+
+    // Ball changes
+    const ballCurrent = currentState.ball;
+    const ballLast = lastState.ball;
+    const ballChanges = {};
+    
+    ['x', 'y', 'velocityX', 'velocityY'].forEach(prop => {
+      if (Math.abs(ballCurrent[prop] - (ballLast[prop] || 0)) > 0.1) {
+        ballChanges[prop] = Math.round(ballCurrent[prop] * 10) / 10;
+      }
+    });
+    
+    if (ballCurrent.lastTouchedBy !== ballLast.lastTouchedBy) {
+      ballChanges.lastTouchedBy = ballCurrent.lastTouchedBy;
+    }
+    
+    if (Object.keys(ballChanges).length > 0) {
+      changes.ball = ballChanges;
+    }
+
+    // Score changes
+    if (currentState.score.player1 !== lastState.score.player1 || 
+        currentState.score.player2 !== lastState.score.player2) {
+      changes.score = currentState.score;
+    }
+
+    // Game time changes
+    if (Math.abs(currentState.gameTime - lastState.gameTime) > 0.1) {
+      changes.gameTime = Math.round(currentState.gameTime * 10) / 10;
+    }
+
+    // Only broadcast if there are significant changes
+    const hasChanges = Object.keys(changes.players).length > 0 || 
+                      Object.keys(changes.ball).length > 0 || 
+                      changes.score || 
+                      changes.gameTime !== null;
+
+    if (hasChanges) {
+      const broadcastData = {
+        type: "game-state-update",
+        roomId: roomId,
+        timestamp: Date.now(),
+        changes: changes, // Delta data
+        // Full state every 10th update for sync
+        fullState: (Date.now() % 10 === 0) ? {
+          players: {
+            player1: {
+              x: Math.round(currentState.players.player1.x * 10) / 10,
+              y: Math.round(currentState.players.player1.y * 10) / 10,
+              velocityX: Math.round(currentState.players.player1.velocityX * 10) / 10,
+              velocityY: Math.round(currentState.players.player1.velocityY * 10) / 10,
+              direction: currentState.players.player1.direction,
+              isJumping: currentState.players.player1.isJumping,
+              isOnGround: currentState.players.player1.isOnGround,
+            },
+            player2: {
+              x: Math.round(currentState.players.player2.x * 10) / 10,
+              y: Math.round(currentState.players.player2.y * 10) / 10,
+              velocityX: Math.round(currentState.players.player2.velocityX * 10) / 10,
+              velocityY: Math.round(currentState.players.player2.velocityY * 10) / 10,
+              direction: currentState.players.player2.direction,
+              isJumping: currentState.players.player2.isJumping,
+              isOnGround: currentState.players.player2.isOnGround,
+            },
+          },
+          ball: {
+            x: Math.round(currentState.ball.x * 10) / 10,
+            y: Math.round(currentState.ball.y * 10) / 10,
+            velocityX: Math.round(currentState.ball.velocityX * 10) / 10,
+            velocityY: Math.round(currentState.ball.velocityY * 10) / 10,
+            lastTouchedBy: currentState.ball.lastTouchedBy,
+          },
+          score: currentState.score,
+          gameTime: Math.round(currentState.gameTime * 10) / 10,
+          isActive: currentState.isActive,
+        } : null
+      };
+
+      // Broadcast to all players in the room
+      this.socketIO.to(roomId).emit("game-state-update", broadcastData);
+
+      // Update last broadcast state
+      room.lastBroadcastState = JSON.parse(JSON.stringify(currentState));
+    }
   }
 
   broadcastGoalEvent(roomId, goalResult) {
@@ -1158,20 +1284,23 @@ class GameService {
       scorer: goalResult.scorer,
       newScore: goalResult.newScore,
       goalEvent: goalResult.goalEvent,
+      celebrationDuration: 1000, // 1 second celebration
+      positionsReset: true
     };
 
     console.log(`Broadcasting goal event to room ${roomId}:`, goalData);
     this.socketIO.to(roomId).emit("goal-scored", goalData);
 
-    // Pause game briefly for goal celebration
+    // Pause game briefly for goal celebration (1 second)
     setTimeout(() => {
       if (this.socketIO) {
         this.socketIO.to(roomId).emit("goal-celebration-end", {
           roomId: roomId,
           timestamp: Date.now(),
+          message: "Game resumed after goal!"
         });
       }
-    }, 2000); // 2 second pause
+    }, 1000); // 1 second pause
   }
 
   broadcastGameEnd(roomId, gameResult) {
@@ -1314,6 +1443,47 @@ class GameService {
     return {
       success: true,
       message: "Left room successfully"
+    };
+  }
+
+  executeKick(room, playerPosition, gamePlayer, ball) {
+    // Calculate kick direction and power based on player position relative to ball
+    const directionX = ball.x - gamePlayer.x;
+    const directionY = ball.y - gamePlayer.y;
+    const distance = Math.sqrt(directionX * directionX + directionY * directionY);
+    
+    if (distance === 0) return null; // Prevent division by zero
+    
+    // Normalize direction
+    const normalizedX = directionX / distance;
+    const normalizedY = directionY / distance;
+    
+    // Calculate kick power (stronger if player is moving)
+    const playerSpeedBonus = Math.abs(gamePlayer.velocityX) + Math.abs(gamePlayer.velocityY);
+    const basePower = 8;
+    const kickPower = basePower + (playerSpeedBonus * 0.5);
+    
+    // Apply kick to ball
+    ball.velocityX = normalizedX * kickPower;
+    ball.velocityY = normalizedY * kickPower * 0.6; // Reduce vertical force
+    ball.lastTouchedBy = playerPosition;
+    
+    // Push ball away from player to prevent sticking
+    const pushDistance = ball.radius + 20;
+    ball.x += normalizedX * pushDistance;
+    ball.y += normalizedY * pushDistance;
+    
+    // Keep ball in bounds
+    const field = room.settings.field;
+    ball.x = Math.max(ball.radius, Math.min(field.width - ball.radius, ball.x));
+    ball.y = Math.max(ball.radius, Math.min(field.groundLevel, ball.y));
+    
+    console.log(`${playerPosition} kicked ball with power ${kickPower.toFixed(1)}`);
+    
+    return {
+      kickPower: kickPower,
+      direction: { x: normalizedX, y: normalizedY },
+      ballVelocity: { x: ball.velocityX, y: ball.velocityY }
     };
   }
 }
