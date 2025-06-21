@@ -352,6 +352,33 @@ const getPlayer = async (req, res) => {
   }
 };
 
+/**
+ * Get match result by room ID
+ */
+const getMatchResult = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const result = gameService.getMatchResult(roomId);
+
+    if (!result.success) {
+      return res.status(404).json({
+        success: false,
+        message: result.message
+      });
+    }
+
+    res.json({
+      winnerID: result.winnerID
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Server error"
+    });
+  }
+};
+
 module.exports = {
   getDocumentation,
   getRooms,
@@ -363,5 +390,6 @@ module.exports = {
   getMatchHistory,
   getRoom,
   getPlayers,
-  getPlayer
+  getPlayer,
+  getMatchResult
 };

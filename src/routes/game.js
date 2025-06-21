@@ -21,4 +21,7 @@ router.get("/stats", gameController.getStats);
 router.get("/leaderboard", gameController.getLeaderboard);
 router.get("/match-history", gameController.getMatchHistory);
 
+// Match result route
+router.get("/result/:roomId", gameController.getMatchResult);
+
 module.exports = router;

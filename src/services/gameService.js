@@ -8,6 +8,7 @@ class GameService {
     this.gameRooms = new Map();
     this.waitingPlayers = new Set();
     this.gameLoops = new Map();
+    this.matchResults = new Map(); // To Store match results
     this.socketIO = null;
     this.startGameLoopCoordinator();
   }
@@ -1485,6 +1486,40 @@ class GameService {
       direction: { x: normalizedX, y: normalizedY },
       ballVelocity: { x: ball.velocityX, y: ball.velocityY }
     };
+  }
+
+  // Get match result by room ID
+  getMatchResult(roomId) {
+    const savedResult = this.matchResults.get(roomId);
+    if (savedResult) {
+      return { success: true, winnerID: savedResult.winnerID };
+    }
+
+    const room = this.getRoom(roomId);
+    if (!room) {
+      return { success: false, message: "Room not found" };
+    }
+
+    if (room.status === "playing") {
+      return { success: false, message: "Game still in progress" };
+    }
+
+    if (room.status === "finished") {
+      const score = room.gameState.score;
+      let winner = null;
+
+      if (score.player1 > score.player2) {
+        winner = room.players[0].id;
+      } else if (score.player2 > score.player1) {
+        winner = room.players[1].id;
+      } else {
+        winner = -1; // Draw
+      }
+
+      return { success: true, winnerID: winner };
+    }
+
+    return { success: false, message: "Room not found" };
   }
 }
 
