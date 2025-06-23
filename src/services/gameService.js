@@ -1,329 +1,109 @@
 const Player = require("../models/player");
-const GameRoom = require("../models/gameRoom");
 const User = require("../models/user");
+
+// Import the new modular services
+const userService = require("./userService");
+const matchService = require("./matchService");
+const roomManagerService = require("./roomManagerService");
+const physicsEngine = require("./physicsEngine");
+const gameBroadcaster = require("./gameBroadcaster");
 
 class GameService {
   constructor() {
     this.connectedPlayers = new Map();
-    this.gameRooms = new Map();
-    this.waitingPlayers = new Set();
     this.gameLoops = new Map();
-    this.socketIO = null;
     this.startGameLoopCoordinator();
   }
 
-  async updateUserGameStats(userId, matchResult) {
-    try {
-      const user = await User.findById(userId);
-      if (!user) return null;
-
-      user.gameStats.totalMatches += 1;
-
-      if (matchResult.won) {
-        user.gameStats.totalWins += 1;
-        user.gameStats.experience += 50;
-        user.gameStats.rankPoints += 25;
-      } else {
-        user.gameStats.totalLosses += 1;
-        user.gameStats.experience += 10;
-        user.gameStats.rankPoints = Math.max(0, user.gameStats.rankPoints - 15);
-      }
-
-      user.gameStats.totalGoals += matchResult.goals || 0;
-      user.gameStats.totalPlayTime += matchResult.playTime || 0;
-
-      // Level up logic
-      const requiredExp = user.gameStats.level * 100;
-      if (user.gameStats.experience >= requiredExp) {
-        user.gameStats.level += 1;
-        user.gameStats.experience = 0;
-      }
-
-      user.lastActiveAt = new Date();
-      return await user.save();
-    } catch (error) {
-      console.error("Error updating user game stats:", error);
-      return null;
-    }
+  // Delegate to UserService
+  async updateUserMatchStats(userId, matchResult) {
+    return await userService.updateUserMatchStats(userId, matchResult);
   }
 
-  async setUserOnline(userId, socketId = null) {
-    try {
-      const user = await User.findById(userId);
-      if (!user) return null;
-
-      user.isOnline = true;
-      user.socketId = socketId;
-      user.lastActiveAt = new Date();
-      return await user.save();
-    } catch (error) {
-      console.error("Error setting user online:", error);
-      return null;
-    }
+  // Delegate to RoomManagerService
+  get gameRooms() {
+    return roomManagerService.gameRooms;
   }
 
-  async setUserOffline(userId) {
-    try {
-      const user = await User.findById(userId);
-      if (!user) return null;
-
-      user.isOnline = false;
-      user.socketId = null;
-      user.lastActiveAt = new Date();
-      return await user.save();
-    } catch (error) {
-      console.error("Error setting user offline:", error);
-      return null;
-    }
+  get waitingPlayers() {
+    return roomManagerService.waitingPlayers;
   }
 
-  async findUserBySocketId(socketId) {
-    try {
-      return await User.findOne({ socketId });
-    } catch (error) {
-      console.error("Error finding user by socket ID:", error);
-      return null;
-    }
+  createRoom(roomData = {}) {
+    return roomManagerService.createRoom(roomData);
   }
 
-  async getUserLeaderboard(limit = 10) {
-    try {
-      return await User.find({ isActive: true })
-        .sort({ "gameStats.rankPoints": -1 })
-        .limit(limit)
-        .select("username gameStats");
-    } catch (error) {
-      console.error("Error getting leaderboard:", error);
-      return [];
-    }
+  getRoom(roomId) {
+    return roomManagerService.getRoom(roomId);
   }
 
-  async getOnlineUsers() {
-    try {
-      return await User.find({ isOnline: true }).select(
-        "username gameStats socketId"
-      );
-    } catch (error) {
-      console.error("Error getting online users:", error);
-      return [];
-    }
+  deleteRoom(roomId) {
+    return roomManagerService.deleteRoom(roomId);
   }
 
-  // Player model business logic (moved from model)
-  updatePlayerStats(player, gameResult) {
-    player.stats.gamesPlayed++;
-    if (gameResult.won) {
-      player.stats.wins++;
-    } else {
-      player.stats.losses++;
-    }
+  findAvailableRoom() {
+    return roomManagerService.findAvailableRoom();
   }
 
-  resetPlayerGameState(player) {
-    player.gameState = {
-      position: { x: 0, y: 0 },
-      score: 0,
-      powerups: [],
-    };
-  }
-
-  // GameRoom model business logic (moved from model)
-  addPlayerToRoom(room, player) {
-    if (room.players.length >= room.maxPlayers) {
-      return { success: false, reason: "Room is full" };
-    }
-    if (room.players.find((p) => p.id === player.id)) {
-      return { success: false, reason: "Player already in room" };
-    }
-    room.players.push(player);
-    player.currentRoom = room.id;
-    return { success: true };
-  }
-
-  removePlayerFromRoom(room, playerId) {
-    const playerIndex = room.players.findIndex((p) => p.id === playerId);
-    if (playerIndex === -1) {
-      return { success: false, reason: "Player not found" };
-    }
-    const player = room.players[playerIndex];
-    room.players.splice(playerIndex, 1);
-    player.currentRoom = null;
-    player.isReady = false;
-
-    return {
-      success: true,
-      isEmpty: room.players.length === 0,
-      player: player,
-    };
-  }
-
-  isRoomFull(room) {
-    return room.players.length >= room.maxPlayers;
-  }
-
-  canRoomStart(room) {
-    return (
-      room.players.length === room.maxPlayers &&
-      room.players.every((p) => p.isReady) &&
-      room.status === "waiting"
-    );
-  }
-
-  startRoomGame(room) {
-    console.log(`Attempting to start game in room ${room.id}`);
-
-    if (!this.canRoomStart(room)) {
-      console.log(`Cannot start game in room ${room.id}`);
-      return { success: false, reason: "Cannot start game" };
-    }
-
-    room.status = "playing";
-    room.startedAt = new Date();
-    room.gameState.isActive = true;
-    room.gameState.score = { player1: 0, player2: 0 };
-    room.gameState.gameTime = 120; // 2 minutes game duration
-
-    // Reset all players' game states
-    room.players.forEach((player) => {
-      this.resetPlayerGameState(player);
-    });
-
-    // Initialize player positions using the new system
-    room.gameState.players.player1.x = 150;
-    room.gameState.players.player1.y = 320;
-    room.gameState.players.player2.x = 650;
-    room.gameState.players.player2.y = 320;
-
-    console.log(`Game started in room ${room.id}`);
-    return { success: true };
-  }
-
-  endRoomGame(room, winnerIndex = 0) {
-    room.status = "finished";
-    room.endedAt = new Date();
-    room.gameState.isActive = false;
-
-    const winner = room.players[winnerIndex];
-    const loser = room.players[1 - winnerIndex];
-
-    return {
-      winner: winner,
-      loser: loser,
-      finalScore: room.gameState.score,
-      duration: room.endedAt - room.startedAt,
-    };
-  }
-
-  updatePlayerPosition(room, playerId, position) {
-    if (room.status !== "playing") {
-      return { success: false, reason: "Game is not active" };
-    }
-    
-    // Find which player this is and update their position
-    const playerIndex = room.players.findIndex((p) => p.id === playerId);
-    if (playerIndex !== -1) {
-      const playerKey = playerIndex === 0 ? "player1" : "player2";
-      room.gameState.players[playerKey].x = position.x;
-      room.gameState.players[playerKey].y = position.y;
-    }
-    
-    return { success: true };
-  }
-
-  setPlayerReady(room, playerId, ready = true) {
-    const player = room.players.find((p) => p.id === playerId);
-    if (!player) {
-      return { success: false, reason: "Player not found" };
-    }
-
-    player.isReady = ready;
-    return {
-      success: true,
-      allReady: room.players.every((p) => p.isReady),
-      canStart: this.canRoomStart(room),
-    };
-  }
-
-  // API service methods for controllers
-  async getApiDocumentation() {
-    return {
-      message: "🏈 Head Ball Real-Time Game API",
-      version: "1.0.0",
-      architecture: "MCS (Model-Controller-Service)",
-      endpoints: {
-        "/stats": "GET - Global game statistics",
-        "/rooms": "GET - All active game rooms",
-        "/rooms/:roomId": "GET - Specific room info",
-        "/players": "GET - All connected players",
-        "/players/:playerId": "GET - Specific player info",
-      },
-      websocket: "Socket.IO enabled for real-time gameplay",
-      note: "All business logic handled in service layer",
-    };
+  async getAvailableRooms(options) {
+    return await roomManagerService.getAvailableRooms(options);
   }
 
   async getAllRooms() {
-    return Array.from(this.gameRooms.values()).map((room) => room.toJSON());
+    return await roomManagerService.getAllRooms();
   }
 
-  async getAllPlayers() {
-    return Array.from(this.connectedPlayers.values()).map((player) =>
-      player.toJSON()
-    );
+  findMatch(socketId) {
+    const player = this.getPlayer(socketId);
+    return roomManagerService.findMatch(player);
   }
 
-  async getGlobalStats() {
-    return {
-      connectedPlayers: this.connectedPlayers.size,
-      activeRooms: this.gameRooms.size,
-      waitingPlayers: this.waitingPlayers.size,
-      totalUsers: await User.countDocuments({ isActive: true }),
-      onlineUsers: await User.countDocuments({ isOnline: true }),
-    };
+  leaveRoom(socketId) {
+    const player = this.getPlayer(socketId);
+    return roomManagerService.leaveRoom(player);
   }
 
-  async getLeaderboard({ page = 1, limit = 20, period = "all" }) {
-    const players = await this.getUserLeaderboard(limit);
-    return {
-      players,
-      total: await User.countDocuments({ isActive: true }),
-    };
+  async joinSpecificRoom(playerId, roomId) {
+    const player = this.getPlayer(playerId);
+    return await roomManagerService.joinSpecificRoom(player, roomId);
   }
 
-  async getAvailableRooms({ page = 1, limit = 10, gameMode }) {
-    const rooms = Array.from(this.gameRooms.values())
-      .filter((room) => room.status === "waiting" && !this.isRoomFull(room))
-      .slice((page - 1) * limit, page * limit)
-      .map((room) => room.toJSON());
-
-    return {
-      rooms,
-      total: Array.from(this.gameRooms.values()).filter(
-        (room) => room.status === "waiting"
-      ).length,
-    };
+  async leaveSpecificRoom(playerId, roomId) {
+    const player = this.getPlayer(playerId);
+    return await roomManagerService.leaveSpecificRoom(player, roomId);
   }
 
-  async createRoom(roomData = {}) {
-    const roomId = this.generateRoomId();
-    const room = new GameRoom(roomId);
+  togglePlayerReady(socketId) {
+    const player = this.getPlayer(socketId);
+    return roomManagerService.togglePlayerReady(player);
+  }
 
-    // Apply any custom settings
-    if (roomData.settings) {
-      Object.assign(room.settings, roomData.settings);
+  startGame(roomId) {
+    const result = roomManagerService.startGame(roomId);
+    if (result.success) {
+      // Start the physics loop for this roomf
+      this.startRoomGameWithLoop(result.room);
     }
-
-    this.gameRooms.set(roomId, room);
-    return room.toJSON();
+    return result;
   }
 
-  // Player Management (Socket-based for real-time game)
-  createPlayer(socketId, username) {
+  endGame(roomId, winnerId = null) {
+    // Stop the game loop first
+    this.stopGameLoop(roomId);
+
+    // End the game in room manager
+    const result = roomManagerService.endGame(roomId, winnerId);
+
+    return result;
+  }
+
+  // Player Management (kept in GameService as it's Socket.IO specific)
+  createPlayer(socketId, username, userId = null) {
     if (this.connectedPlayers.has(socketId)) {
       return { success: false, reason: "Player already exists" };
     }
 
-    const player = new Player(socketId, username);
+    const player = new Player(socketId, username, userId);
     this.connectedPlayers.set(socketId, player);
 
     return { success: true, player: player };
@@ -338,7 +118,7 @@ class GameService {
     if (!player) return null;
 
     if (player.currentRoom) {
-      this.leaveRoom(socketId, player.currentRoom);
+      this.leaveRoom(socketId);
     }
 
     // Remove from waiting players if they were waiting
@@ -350,250 +130,39 @@ class GameService {
     return player;
   }
 
-  // Room Management
-  createRoom() {
-    const roomId = this.generateRoomId();
-    const room = new GameRoom(roomId);
-    this.gameRooms.set(roomId, room);
-
-    return room;
-  }
-
-  getRoom(roomId) {
-    return this.gameRooms.get(roomId);
-  }
-
-  deleteRoom(roomId) {
-    const room = this.gameRooms.get(roomId);
-    if (room) {
-      this.gameRooms.delete(roomId);
-    }
-    return room;
-  }
-  findAvailableRoom() {
-    for (let room of this.gameRooms.values()) {
-      if (!room.isFull() && room.status === "waiting") {
-        return room;
-      }
-    }
-    return null;
-  }
-
-  // Matchmaking - simplified for 1v1 only
-  findMatch(socketId) {
-    const player = this.getPlayer(socketId);
-    if (!player) {
-      return { success: false, reason: "Player not found" };
-    }
-
-    if (player.currentRoom) {
-      return { success: false, reason: "Player already in a room" };
-    }
-
-    // Find existing room or create a new one
-    let room = this.findAvailableRoom();
-    if (!room) {
-      room = this.createRoom();
-    }
-
-    // Add player to the room
-    const result = room.addPlayer(player);
-    if (!result.success) {
-      return { success: false, reason: result.reason };
-    }
-
-    this.waitingPlayers.delete(socketId);
-
-    return {
-      success: true,
-      room: room,
-      player: player,
-    };
-  }
-
-  leaveRoom(socketId) {
-    const player = this.getPlayer(socketId);
-    if (!player || !player.currentRoom) {
-      return { success: false, reason: "Player not in a room" };
-    }
-
-    const room = this.getRoom(player.currentRoom);
-    if (!room) {
-      return { success: false, reason: "Room not found" };
-    }
-
-    const result = room.removePlayer(socketId);
-    if (!result.success) {
-      return { success: false, reason: result.reason };
-    }
-
-    // If room is empty, delete it
-    if (result.isEmpty) {
-      this.deleteRoom(room.id);
-    }
-
-    return {
-      success: true,
-      player: result.player,
-      room: room,
-    };
-  }
-
-  togglePlayerReady(socketId) {
-    const player = this.getPlayer(socketId);
-    if (!player || !player.currentRoom) {
-      return { success: false, reason: "Player not in a room" };
-    }
-
-    const room = this.getRoom(player.currentRoom);
-    if (!room) {
-      return { success: false, reason: "Room not found" };
-    }
-    player.isReady = !player.isReady;
-    return {
-      success: true,
-      player: player,
-      room: room,
-      canStart: room.canStart(),
-    };
-  }
-  startGame(roomId) {
-    const room = this.getRoom(roomId);
-    if (!room) {
-      return { success: false, reason: "Room not found" };
-    }
-
-    if (room.players.length < 2) {
-      return { success: false, reason: "Need 2 players to start" };
-    }
-
-    // Use enhanced game start with 60fps loop
-    const result = this.startRoomGameWithLoop(room);
-    if (!result.success) {
-      return { success: false, reason: result.reason };
-    }
-
-    console.log(
-      `🎮 2D Head Ball game started in room ${roomId} with 60fps physics!`
+  async getAllPlayers() {
+    return Array.from(this.connectedPlayers.values()).map((player) =>
+      player.toJSON()
     );
-
-    return {
-      success: true,
-      room: room,
-      message: "2D Head Ball match started with real-time physics!",
-    };
   }
 
-  endGame(roomId, winnerId = null) {
-    const room = this.getRoom(roomId);
-    if (!room) {
-      return { success: false, reason: "Room not found" };
-    }
-    const result = room.endGame();
-
-    setTimeout(() => {
-      this.deleteRoom(roomId);
-    }, 30000); // Delay before deleting room
-    return { success: true, room: room, gameResult: result };
-  }
-
+  // Game Action Handling (coordinates physics and broadcasting)
   handleGameAction(socketId, action, data = {}) {
     const player = this.getPlayer(socketId);
     if (!player || !player.currentRoom) {
-      console.log(`Action failed: Player ${socketId} not in active game`);
-      return { success: false, reason: "Player not in active game" };
+      return { success: false, reason: "Player not in a room" };
     }
 
     const room = this.getRoom(player.currentRoom);
-    if (!room) {
-      console.log(`Action failed: Room ${player.currentRoom} not found`);
-      return { success: false, reason: "Room not found" };
-    }
-
-    if (room.status !== "playing") {
-      console.log(
-        `❌ Action failed: Room ${room.id} status is "${room.status}", not "playing"`
-      );
+    if (!room || !room.gameState.isActive) {
       return { success: false, reason: "Game not active" };
     }
 
-    console.log(
-      `✅ Processing action "${action}" for player ${player.username} in room ${room.id}`
-    );
-
-    // Handle different game actions
+    // Handle action based on type
     switch (action) {
-      case "goal":
-      case "GOAL":
-        const scored = room.updateScore(player.id, 1);
-        if (scored) {
-          console.log(`Goal scored by ${player.username} in room ${room.id}`);
-          return {
-            success: true,
-            action: "goal",
-            player: player,
-            newScore: room.gameState.score,
-            gameState: room.getGameState(),
-          };
-        }
-        break;
-
-      case "MOVE_UP":
-      case "MOVE_DOWN":
-      case "MOVE_LEFT":
-      case "MOVE_RIGHT":
-        // Handle movement actions
-        const moved = room.movePlayer(player.id, action);
-        if (moved) {
-          console.log(`${player.username} moved: ${action}`);
-          return {
-            success: true,
-            action: action,
-            player: player,
-            gameState: room.getGameState(),
-          };
-        }
-        break;
-
       case "kick":
-      case "KICK":
-        // Handle kick action (moves ball)
-        const kicked = room.movePlayer(player.id, "KICK");
-        if (kicked) {
-          console.log(`${player.username} kicked the ball`);
-          return {
-            success: true,
-            action: "KICK",
-            player: player,
-            gameState: room.getGameState(),
-          };
-        }
-        break;
-
-      case "jump":
-      case "JUMP":
-      case "tackle":
-      case "TACKLE":
-      case "powerup":
-      case "POWERUP":
-        // These are just animation events, no position change
-        console.log(`${player.username} performed action: ${action}`);
-        return {
-          success: true,
-          action: action,
-          player: player,
-          data: data,
-        };
+        return this.handlePlayerKick(socketId, data);
+      case "move":
+        return this.handlePlayerInput(socketId, data);
+      default:
+        return { success: false, reason: "Unknown action" };
     }
-
-    return { success: false, reason: "Invalid action" };
   }
 
-  // Player movement input handler
   handlePlayerInput(socketId, inputData) {
     const player = this.getPlayer(socketId);
     if (!player || !player.currentRoom) {
-      return { success: false, reason: "Player not in game" };
+      return { success: false, reason: "Player not in a room" };
     }
 
     const room = this.getRoom(player.currentRoom);
@@ -601,486 +170,177 @@ class GameService {
       return { success: false, reason: "Game not active" };
     }
 
-    // Get player position (player1 or player2)
-    const playerPosition = room.players.find(p => p.id === socketId)?.position;
-    if (!playerPosition) {
-      return { success: false, reason: "Player position not found" };
+    // Delegate to physics engine
+    const result = physicsEngine.handlePlayerInput(room, socketId, inputData);
+
+    if (result.success && result.kickResult) {
+      // Broadcast kick action
+      gameBroadcaster.broadcastPlayerKick(
+        room.id,
+        player.id,
+        player.username,
+        result.kickResult
+      );
     }
 
-    const gamePlayer = room.gameState.players[playerPosition];
-    const physics = room.settings.physics;
-
-    // Input validation with anti-cheat measures
-    const currentTime = Date.now();
-    if (!player.lastInputTime) player.lastInputTime = 0;
-    
-    // Prevent input spam (max 120 inputs per second)
-    if (currentTime - player.lastInputTime < 8.33) {
-      return { success: false, reason: "Input rate limit" };
-    }
-    player.lastInputTime = currentTime;
-
-    // Enhanced input handling with buffering
-    let inputProcessed = false;
-    let kickResult = null;
-
-    switch (inputData.action) {
-      case "move-left":
-        if (inputData.pressed) {
-          gamePlayer.direction = "left";
-          gamePlayer.velocityX = Math.max(-physics.playerSpeed, gamePlayer.velocityX - physics.playerSpeed * 0.3);
-        }
-        inputProcessed = true;
-        break;
-
-      case "move-right":
-        if (inputData.pressed) {
-          gamePlayer.direction = "right";
-          gamePlayer.velocityX = Math.min(physics.playerSpeed, gamePlayer.velocityX + physics.playerSpeed * 0.3);
-        }
-        inputProcessed = true;
-        break;
-
-      case "jump":
-        if (inputData.pressed && gamePlayer.isOnGround && !gamePlayer.isJumping) {
-          gamePlayer.velocityY = -physics.jumpPower;
-          gamePlayer.isJumping = true;
-          gamePlayer.isOnGround = false;
-          console.log(`${playerPosition} jumped with velocity ${-physics.jumpPower}`);
-        }
-        inputProcessed = true;
-        break;
-
-      case "kick":
-        if (inputData.pressed) {
-          // Check if player is close enough to ball for kick
-          const ball = room.gameState.ball;
-          const distanceX = Math.abs(gamePlayer.x - ball.x);
-          const distanceY = Math.abs(gamePlayer.y - ball.y);
-          const kickRange = 40; // pixels
-
-          if (distanceX <= kickRange && distanceY <= kickRange) {
-            // Anti-spam: 300ms cooldown between kicks
-            if (!gamePlayer.lastKickTime || currentTime - gamePlayer.lastKickTime > 300) {
-              kickResult = this.executeKick(room, playerPosition, gamePlayer, ball);
-              gamePlayer.lastKickTime = currentTime;
-            }
-          }
-        }
-        inputProcessed = true;
-        break;
-
-      case "stop":
-        gamePlayer.direction = "idle";
-        gamePlayer.velocityX *= 0.7; // Quick deceleration
-        inputProcessed = true;
-        break;
-
-      default:
-        return { success: false, reason: "Invalid action" };
-    }
-
-    return {
-      success: inputProcessed,
-      player: player,
-      gamePlayer: gamePlayer,
-      kickResult: kickResult,
-      timestamp: currentTime
-    };
+    return result;
   }
 
-  // Ball physics engine
-  updateBallPhysics(room, deltaTime) {
-    const ball = room.gameState.ball;
-    const physics = room.settings.physics;
-    const field = room.settings.field;
-
-    // Apply gravity
-    ball.velocityY += physics.gravity * deltaTime;
-
-    // Apply air resistance
-    ball.velocityX *= physics.airResistance;
-    ball.velocityY *= physics.airResistance;
-
-    // Update ball position
-    ball.x += ball.velocityX * deltaTime;
-    ball.y += ball.velocityY * deltaTime;
-
-    // Ground collision
-    if (ball.y + ball.radius >= field.groundLevel) {
-      ball.y = field.groundLevel - ball.radius;
-      ball.velocityY = -ball.velocityY * physics.ballBounce; // Bounce with damping
-
-      // Apply ground friction
-      ball.velocityX *= physics.friction;
-    }
-
-    // Ceiling collision
-    if (ball.y - ball.radius <= 0) {
-      ball.y = ball.radius;
-      ball.velocityY = -ball.velocityY * physics.ballBounce;
-    }
-
-    // Wall collisions and goal detection
-    const goalResult = this.checkGoalCollision(room, ball, field);
-    if (goalResult.isGoal) {
-      return goalResult;
-    }
-
-    // Side wall bounces (if not a goal)
-    if (ball.x - ball.radius <= 0) {
-      ball.x = ball.radius;
-      ball.velocityX = -ball.velocityX * physics.ballBounce;
-    }
-    if (ball.x + ball.radius >= field.width) {
-      ball.x = field.width - ball.radius;
-      ball.velocityX = -ball.velocityX * physics.ballBounce;
-    }
-
-    // Cap maximum velocity
-    const maxVel = physics.maxVelocity;
-    if (Math.abs(ball.velocityX) > maxVel) {
-      ball.velocityX = Math.sign(ball.velocityX) * maxVel;
-    }
-    if (Math.abs(ball.velocityY) > maxVel) {
-      ball.velocityY = Math.sign(ball.velocityY) * maxVel;
-    }
-
-    return { isGoal: false };
+  handlePlayerKick(socketId, data) {
+    return this.handlePlayerInput(socketId, {
+      action: "kick",
+      pressed: data.pressed || true,
+    });
   }
 
-  checkGoalCollision(room, ball, field) {
-    const goalHeight = field.goalHeight;
-    const goalY = field.groundLevel - goalHeight;
+  // Save match after game ends
+  async saveMatchAfterGameEnd(room, gameResult) {
+    try {
+      console.log(`💾 saveMatchAfterGameEnd called for room ${room.id}`);
+      console.log(`💾 Room matchId: ${room.matchId}`);
+      console.log(`💾 Game result:`, JSON.stringify(gameResult, null, 2));
 
-    // Left goal (player2 scores)
-    if (ball.x - ball.radius <= 0) {
-      if (ball.y >= goalY && ball.y <= field.groundLevel) {
-        return this.handleGoal(room, "player2");
-      }
-    }
-
-    // Right goal (player1 scores)
-    if (ball.x + ball.radius >= field.width) {
-      if (ball.y >= goalY && ball.y <= field.groundLevel) {
-        return this.handleGoal(room, "player1");
-      }
-    }
-
-    return { isGoal: false };
-  }
-
-  handleGoal(room, scoringPlayer) {
-    // Update score
-    room.gameState.score[scoringPlayer] += 1;
-
-    // **IMMEDIATE POSITION RESET AFTER GOAL**
-    // Reset both players to starting positions
-    room.gameState.players.player1.x = 150;
-    room.gameState.players.player1.y = 320;
-    room.gameState.players.player1.velocityX = 0;
-    room.gameState.players.player1.velocityY = 0;
-    room.gameState.players.player1.isJumping = false;
-    room.gameState.players.player1.isOnGround = true;
-    room.gameState.players.player1.direction = "idle";
-
-    room.gameState.players.player2.x = 650;
-    room.gameState.players.player2.y = 320;
-    room.gameState.players.player2.velocityX = 0;
-    room.gameState.players.player2.velocityY = 0;
-    room.gameState.players.player2.isJumping = false;
-    room.gameState.players.player2.isOnGround = true;
-    room.gameState.players.player2.direction = "idle";
-
-    // Reset ball to center
-    this.resetBallPosition(room);
-
-    // Create goal event
-    const goalEvent = {
-      scorer: scoringPlayer,
-      time: Date.now(),
-      newScore: { ...room.gameState.score },
-      positionsReset: true
-    };
-
-    // Add to game events
-    room.gameState.gameEvents.push(goalEvent);
-
-    console.log(
-      `⚽ GOAL! ${scoringPlayer} scored! Score: ${room.gameState.score.player1}-${room.gameState.score.player2} (Positions reset)`
-    );
-
-    return {
-      isGoal: true,
-      scorer: scoringPlayer,
-      newScore: room.gameState.score,
-      goalEvent: goalEvent,
-    };
-  }
-
-  resetBallPosition(room) {
-    const field = room.settings.field;
-    room.gameState.ball = {
-      x: field.centerLine,
-      y: 200, // Middle height
-      velocityX: 0,
-      velocityY: 0,
-      radius: 15,
-      lastTouchedBy: null,
-      lastKickTime: {},
-    };
-  }
-
-  // Player-ball collision detection
-  checkPlayerBallCollisions(room, deltaTime) {
-    const ball = room.gameState.ball;
-    const players = room.gameState.players;
-
-    // Check collision with both players
-    ["player1", "player2"].forEach((playerKey) => {
-      const player = players[playerKey];
-      const collision = this.detectPlayerBallCollision(player, ball);
-
-      if (collision.isColliding) {
-        this.handlePlayerBallCollision(
-          room,
-          playerKey,
-          player,
-          ball,
-          collision
+      if (!room.matchId) {
+        console.log(
+          `❌ No matchId found for room ${room.id}, skipping match save`
         );
+        return;
       }
-    });
-  }
 
-  detectPlayerBallCollision(player, ball) {
-    // Player dimensions - match visual representation (30px circles)
-    const playerRadius = 15; // 30px diameter = 15px radius (like visual)
+      // Check if match is already finished to prevent duplicate saves
+      const currentMatch = await matchService.getMatchById(room.matchId);
+      if (currentMatch.success && currentMatch.match.status === "finished") {
+        console.log(`⚠️ Match ${room.matchId} already finished, skipping save`);
+        return;
+      }
 
-    // Calculate distance between player center and ball center
-    const distanceX = player.x - ball.x;
-    const distanceY = player.y - ball.y;
-    const distance = Math.sqrt(distanceX * distanceX + distanceY * distanceY);
+      const finalScore = gameResult.finalScore || room.gameState.score;
+      const duration = 120 - room.gameState.gameTime; // Calculate duration from remaining time
 
-    // Collision if distance is less than combined radii + small buffer
-    const collisionDistance = playerRadius + ball.radius + 5; // 5px buffer for easier contact
+      console.log(`💾 Saving match ${room.matchId} after game end...`);
+      console.log(`💾 Final score:`, finalScore);
+      console.log(`💾 Duration:`, duration);
 
-    if (distance < collisionDistance) {
-      // Determine collision direction
-      const relativeX = ball.x - player.x;
-      const relativeY = ball.y - player.y;
+      const matchResult = await matchService.endMatch(
+        room.matchId,
+        finalScore,
+        duration
+      );
 
-      return {
-        isColliding: true,
-        relativeX: relativeX,
-        relativeY: relativeY,
-        distance: distance,
-      };
+      if (matchResult.success) {
+        console.log(`Match ${room.matchId} saved successfully after game end`);
+
+        // Update user stats for both players
+        const player1 = room.players[0];
+        const player2 = room.players[1];
+        const winner = matchResult.match.result.winner;
+
+        if (player1.userId) {
+          const outcome =
+            winner === player1.userId
+              ? "win"
+              : winner === "draw"
+              ? "draw"
+              : "loss";
+          await userService.updateUserMatchStats(player1.userId, { outcome });
+        }
+
+        if (player2.userId) {
+          const outcome =
+            winner === player2.userId
+              ? "win"
+              : winner === "draw"
+              ? "draw"
+              : "loss";
+          await userService.updateUserMatchStats(player2.userId, { outcome });
+        }
+
+        console.log(`User stats updated for match ${room.matchId}`);
+      } else {
+        console.error("Error saving match after game end:", matchResult.error);
+      }
+    } catch (error) {
+      console.error("Error in saveMatchAfterGameEnd:", error);
     }
-
-    return { isColliding: false };
   }
 
-  handlePlayerBallCollision(room, playerKey, player, ball, collision) {
-    // Check if this player recently touched the ball (prevent spam)
-    const currentTime = Date.now();
-    if (!ball.lastKickTime) ball.lastKickTime = {};
-    
-    // 200ms cooldown per player to prevent continuous kicking
-    if (ball.lastKickTime[playerKey] && currentTime - ball.lastKickTime[playerKey] < 200) {
-      return;
-    }
-
-    // Check if ball was recently touched by opponent (for smooth player vs player)
-    const otherPlayer = playerKey === "player1" ? "player2" : "player1";
-    const recentOpponentTouch = ball.lastKickTime[otherPlayer] && 
-                               currentTime - ball.lastKickTime[otherPlayer] < 300;
-
-    // Calculate kick strength based on player movement
-    let kickPower = Math.abs(player.velocityX) + Math.abs(player.velocityY) + 2;
-    
-    // If opponent recently touched ball, this is a tackle/steal
-    if (recentOpponentTouch) {
-      kickPower *= 1.2; // Stronger tackle
-    }
-
-    // Determine kick direction based on collision position
-    const normalizedX = collision.relativeX / Math.max(Math.abs(collision.relativeX), 1);
-    const normalizedY = collision.relativeY / Math.max(Math.abs(collision.relativeY), 1);
-    
-    let kickX = normalizedX * kickPower;
-    let kickY = normalizedY * kickPower * 0.4; // Less vertical force
-
-    // Add player's velocity to the kick (momentum transfer)
-    kickX += player.velocityX * 0.8;
-    kickY += player.velocityY * 0.4;
-
-    // Apply kick to ball
-    ball.velocityX = kickX;
-    ball.velocityY = kickY;
-    ball.lastTouchedBy = playerKey;
-    ball.lastKickTime[playerKey] = currentTime;
-
-    // Move ball away from player to prevent sticking
-    const pushDistance = ball.radius + 15; // Increased separation
-    const pushX = normalizedX * pushDistance;
-    const pushY = normalizedY * pushDistance;
-    
-    ball.x += pushX;
-    ball.y += pushY;
-
-    // Ensure ball stays in bounds
-    const field = room.settings.field;
-    ball.x = Math.max(ball.radius, Math.min(field.width - ball.radius, ball.x));
-    ball.y = Math.max(ball.radius, Math.min(field.groundLevel, ball.y));
-
-    console.log(
-      `${playerKey} ${recentOpponentTouch ? 'tackled' : 'kicked'} the ball! Velocity: (${kickX.toFixed(
-        1
-      )}, ${kickY.toFixed(1)})`
-    );
-  }
-
-  // Player physics update
-  updatePlayerPhysics(room, deltaTime) {
-    const physics = room.settings.physics;
-    const field = room.settings.field;
-
-    ["player1", "player2"].forEach((playerKey) => {
-      const player = room.gameState.players[playerKey];
-
-      // Apply gravity to players
-      if (!player.isOnGround) {
-        player.velocityY += physics.gravity * deltaTime;
-      }
-
-      // Update player position
-      player.x += player.velocityX * deltaTime;
-      player.y += player.velocityY * deltaTime;
-
-      // Ground collision for players
-      if (player.y >= field.groundLevel) {
-        player.y = field.groundLevel;
-        player.velocityY = 0;
-        player.isOnGround = true;
-        player.isJumping = false;
-      }
-
-      // Keep players within field bounds (using same radius as collision detection)
-      const playerRadius = 15;
-      if (player.x - playerRadius < 0) {
-        player.x = playerRadius;
-      }
-      if (player.x + playerRadius > field.width) {
-        player.x = field.width - playerRadius;
-      }
-
-      // Apply friction when on ground
-      if (player.isOnGround) {
-        player.velocityX *= physics.friction;
-      }
-    });
-  }
-
-  // Main physics update (60fps)
-  updateGamePhysics(roomId, deltaTime = 16.67) {
-    // ~60fps = 16.67ms
+  // Physics and Game Loop Management
+  async updateGamePhysics(roomId, deltaTime = 16.67) {
     const room = this.getRoom(roomId);
-    if (!room || !room.gameState.isActive) {
-      return { success: false, reason: "No active game" };
+
+    // Validate room exists and game is active
+    if (!room) {
+      console.warn(`updateGamePhysics: Room ${roomId} not found`);
+      this.stopGameLoop(roomId); // Stop loop for non-existent room
+      return null;
     }
 
-    // Convert deltaTime from milliseconds to a normalized factor
-    const timeFactor = deltaTime / 16.67; // Normalize to 60fps
-
-    // Update player physics
-    this.updatePlayerPhysics(room, timeFactor);
-
-    // Update ball physics
-    const ballResult = this.updateBallPhysics(room, timeFactor);
-
-    // Check player-ball collisions
-    this.checkPlayerBallCollisions(room, timeFactor);
-
-    // Update game time (countdown)
-    room.gameState.gameTime -= deltaTime / 1000; // Convert ms to seconds
-
-    // Check if game should end
-    if (room.gameState.gameTime <= 0) {
-      return this.endGameByTime(room);
+    if (!room.gameState || !room.gameState.isActive) {
+      console.log(
+        `updateGamePhysics: Game not active for room ${roomId}, stopping loop`
+      );
+      this.stopGameLoop(roomId);
+      return null;
     }
 
-    // Update last update timestamp
-    room.lastUpdate = Date.now();
+    const result = physicsEngine.updateGamePhysics(room, deltaTime);
 
-    return {
-      success: true,
-      room: room,
-      ballResult: ballResult,
-      gameState: {
-        players: room.gameState.players,
-        ball: room.gameState.ball,
-        score: room.gameState.score,
-        gameTime: room.gameState.gameTime,
-        isActive: room.gameState.isActive,
-      },
-    };
-  }
+    if (result) {
+      // Broadcast game state updates
+      gameBroadcaster.broadcastGameState(roomId, result);
 
-  endGameByTime(room) {
-    room.status = "finished";
-    room.gameState.isActive = false;
-    room.endedAt = new Date();
+      // Handle goal events
+      if (result.goalResult) {
+        gameBroadcaster.broadcastGoalEvent(roomId, result.goalResult);
+      }
 
-    const score = room.gameState.score;
-    let winner = null;
-    let result = "draw";
+      // Handle game end
+      if (result.type === "game-ended") {
+        console.log(`🏁 Game ended for room ${roomId}, processing...`);
 
-    if (score.player1 > score.player2) {
-      winner = "player1";
-      result = "player1_wins";
-    } else if (score.player2 > score.player1) {
-      winner = "player2";
-      result = "player2_wins";
+        // Mark game as inactive BEFORE stopping loop
+        room.gameState.isActive = false;
+        room.status = "finished";
+        this.stopGameLoop(roomId);
+
+        console.log(
+          `🏁 Room ${roomId} status set to finished, saving match...`
+        );
+
+        // Save match to database after game status is set to finished
+        await this.saveMatchAfterGameEnd(room, result);
+
+        gameBroadcaster.broadcastGameEnd(roomId, result);
+        return result;
+      }
     }
 
-    console.log(
-      `Game ended by time! Final score: ${score.player1}-${score.player2} (${result})`
-    );
-
-    return {
-      success: true,
-      gameEnded: true,
-      winner: winner,
-      result: result,
-      finalScore: score,
-      room: room,
-    };
+    return result;
   }
 
-  generateRoomId() {
-    return `room-${Math.random().toString(36).substring(2, 9)}`;
-  }
-
-  getGameStats() {
-    return {
-      totalPlayers: this.connectedPlayers.size,
-      activeRooms: this.gameRooms.size,
-      waitingPlayers: this.waitingPlayers.size,
-      playingPlayers: Array.from(this.gameRooms.values())
-        .filter((room) => room.status === "playing")
-        .reduce((count, room) => count + room.players.length, 0),
-    };
-  }
-
+  // Game Loop Management
   startGameLoopCoordinator() {
     // Check for active games every 100ms and ensure they have game loops
     setInterval(() => {
       this.gameRooms.forEach((room, roomId) => {
-        if (room.gameState.isActive && !this.gameLoops.has(roomId)) {
+        // Only start loops for actively playing games
+        if (
+          room.gameState.isActive &&
+          room.status === "playing" &&
+          !this.gameLoops.has(roomId)
+        ) {
+          console.log(`🔄 Coordinator starting game loop for room ${roomId}`);
           this.startGameLoop(roomId);
         }
-        if (!room.gameState.isActive && this.gameLoops.has(roomId)) {
+
+        // Stop loops for inactive games or finished games
+        if (
+          (!room.gameState.isActive || room.status !== "playing") &&
+          this.gameLoops.has(roomId)
+        ) {
+          console.log(
+            `🔄 Coordinator stopping game loop for room ${roomId} (status: ${room.status}, active: ${room.gameState.isActive})`
+          );
           this.stopGameLoop(roomId);
         }
       });
@@ -1093,36 +353,47 @@ class GameService {
       return;
     }
 
-    console.log(`Starting 60fps game loop for room ${roomId}`);
+    console.log(`🎮 Starting 60fps game loop for room ${roomId}`);
 
-    let lastTime = Date.now();
+    let lastUpdate = Date.now();
+    const targetFPS = 60;
+    const targetDelta = 1000 / targetFPS; // 16.67ms
 
-    const gameLoop = setInterval(() => {
+    const gameLoop = setInterval(async () => {
       const currentTime = Date.now();
-      const deltaTime = currentTime - lastTime;
-      lastTime = currentTime;
+      const deltaTime = currentTime - lastUpdate;
+      lastUpdate = currentTime;
 
-      // Update game physics
-      const result = this.updateGamePhysics(roomId, deltaTime);
-
-      if (result.success) {
-        // Handle special events (goals, game end)
-        if (result.ballResult && result.ballResult.isGoal) {
-          this.broadcastGoalEvent(roomId, result.ballResult);
-        }
-
-        if (result.gameEnded) {
-          this.broadcastGameEnd(roomId, result);
+      try {
+        // Check if room still exists before updating
+        const room = this.getRoom(roomId);
+        if (!room) {
+          console.log(`🛑 Room ${roomId} no longer exists, stopping game loop`);
           this.stopGameLoop(roomId);
-        } else {
-          // Only broadcast game state if game is still active
-          this.broadcastGameState(roomId, result);
+          return;
         }
-      } else {
-        // Game no longer active, stop loop
+
+        // Check if game is still active
+        if (!room.gameState.isActive || room.status !== "playing") {
+          console.log(
+            `🛑 Game no longer active for room ${roomId}, stopping game loop`
+          );
+          this.stopGameLoop(roomId);
+          return;
+        }
+
+        const result = await this.updateGamePhysics(roomId, deltaTime);
+
+        // If game ended, stop the loop
+        if (result && result.type === "game-ended") {
+          this.stopGameLoop(roomId);
+        }
+      } catch (error) {
+        console.error(`Error in game loop for room ${roomId}:`, error);
+        console.error(`Error details:`, error.stack);
         this.stopGameLoop(roomId);
       }
-    }, 16.67); // ~60fps (16.67ms intervals)
+    }, targetDelta);
 
     this.gameLoops.set(roomId, gameLoop);
   }
@@ -1132,359 +403,30 @@ class GameService {
     if (gameLoop) {
       clearInterval(gameLoop);
       this.gameLoops.delete(roomId);
-      console.log(`Stopped game loop for room ${roomId}`);
+      console.log(`🛑 Stopped game loop for room ${roomId}`);
     }
-  }
-
-  // Enhanced real-time broadcasting with delta compression
-  broadcastGameState(roomId, updateResult) {
-    if (!this.socketIO || !updateResult || !updateResult.gameState) {
-      return;
-    }
-
-    const room = updateResult.room;
-    const gameState = updateResult.gameState;
-
-    // Validate gameState structure
-    if (!gameState.players || !gameState.players.player1 || !gameState.players.player2 || !gameState.ball) {
-      console.warn(`Invalid gameState structure for room ${roomId}`);
-      return;
-    }
-
-    // Delta compression - only send changed data
-    if (!room.lastBroadcastState) {
-      room.lastBroadcastState = {
-        players: { player1: {}, player2: {} },
-        ball: {},
-        score: { player1: 0, player2: 0 },
-        gameTime: 120
-      };
-    }
-
-    const lastState = room.lastBroadcastState;
-    const currentState = gameState;
-    
-    // Check what has changed (delta calculation)
-    const changes = {
-      players: {},
-      ball: {},
-      score: null,
-      gameTime: null
-    };
-
-    // Player changes
-    ['player1', 'player2'].forEach(playerKey => {
-      const current = currentState.players[playerKey];
-      const last = lastState.players[playerKey];
-      
-      const playerChanges = {};
-      ['x', 'y', 'velocityX', 'velocityY', 'direction', 'isJumping', 'isOnGround'].forEach(prop => {
-        if (Math.abs(current[prop] - (last[prop] || 0)) > 0.1) { // Threshold for float comparison
-          playerChanges[prop] = Math.round(current[prop] * 10) / 10;
-        }
-      });
-      
-      if (Object.keys(playerChanges).length > 0) {
-        changes.players[playerKey] = playerChanges;
-      }
-    });
-
-    // Ball changes
-    const ballCurrent = currentState.ball;
-    const ballLast = lastState.ball;
-    const ballChanges = {};
-    
-    ['x', 'y', 'velocityX', 'velocityY'].forEach(prop => {
-      if (Math.abs(ballCurrent[prop] - (ballLast[prop] || 0)) > 0.1) {
-        ballChanges[prop] = Math.round(ballCurrent[prop] * 10) / 10;
-      }
-    });
-    
-    if (ballCurrent.lastTouchedBy !== ballLast.lastTouchedBy) {
-      ballChanges.lastTouchedBy = ballCurrent.lastTouchedBy;
-    }
-    
-    if (Object.keys(ballChanges).length > 0) {
-      changes.ball = ballChanges;
-    }
-
-    // Score changes
-    if (currentState.score.player1 !== lastState.score.player1 || 
-        currentState.score.player2 !== lastState.score.player2) {
-      changes.score = currentState.score;
-    }
-
-    // Game time changes
-    if (Math.abs(currentState.gameTime - lastState.gameTime) > 0.1) {
-      changes.gameTime = Math.round(currentState.gameTime * 10) / 10;
-    }
-
-    // Only broadcast if there are significant changes
-    const hasChanges = Object.keys(changes.players).length > 0 || 
-                      Object.keys(changes.ball).length > 0 || 
-                      changes.score || 
-                      changes.gameTime !== null;
-
-    if (hasChanges) {
-      const broadcastData = {
-        type: "game-state-update",
-        roomId: roomId,
-        timestamp: Date.now(),
-        changes: changes, // Delta data
-        // Full state every 10th update for sync
-        fullState: (Date.now() % 10 === 0) ? {
-          players: {
-            player1: {
-              x: Math.round(currentState.players.player1.x * 10) / 10,
-              y: Math.round(currentState.players.player1.y * 10) / 10,
-              velocityX: Math.round(currentState.players.player1.velocityX * 10) / 10,
-              velocityY: Math.round(currentState.players.player1.velocityY * 10) / 10,
-              direction: currentState.players.player1.direction,
-              isJumping: currentState.players.player1.isJumping,
-              isOnGround: currentState.players.player1.isOnGround,
-            },
-            player2: {
-              x: Math.round(currentState.players.player2.x * 10) / 10,
-              y: Math.round(currentState.players.player2.y * 10) / 10,
-              velocityX: Math.round(currentState.players.player2.velocityX * 10) / 10,
-              velocityY: Math.round(currentState.players.player2.velocityY * 10) / 10,
-              direction: currentState.players.player2.direction,
-              isJumping: currentState.players.player2.isJumping,
-              isOnGround: currentState.players.player2.isOnGround,
-            },
-          },
-          ball: {
-            x: Math.round(currentState.ball.x * 10) / 10,
-            y: Math.round(currentState.ball.y * 10) / 10,
-            velocityX: Math.round(currentState.ball.velocityX * 10) / 10,
-            velocityY: Math.round(currentState.ball.velocityY * 10) / 10,
-            lastTouchedBy: currentState.ball.lastTouchedBy,
-          },
-          score: currentState.score,
-          gameTime: Math.round(currentState.gameTime * 10) / 10,
-          isActive: currentState.isActive,
-        } : null
-      };
-
-      // Broadcast to all players in the room
-      this.socketIO.to(roomId).emit("game-state-update", broadcastData);
-
-      // Update last broadcast state
-      room.lastBroadcastState = JSON.parse(JSON.stringify(currentState));
-    }
-  }
-
-  broadcastGoalEvent(roomId, goalResult) {
-    if (!this.socketIO) return;
-
-    const goalData = {
-      type: "goal-scored",
-      roomId: roomId,
-      timestamp: Date.now(),
-      scorer: goalResult.scorer,
-      newScore: goalResult.newScore,
-      goalEvent: goalResult.goalEvent,
-      celebrationDuration: 1000, // 1 second celebration
-      positionsReset: true
-    };
-
-    console.log(`Broadcasting goal event to room ${roomId}:`, goalData);
-    this.socketIO.to(roomId).emit("goal-scored", goalData);
-
-    // Pause game briefly for goal celebration (1 second)
-    setTimeout(() => {
-      if (this.socketIO) {
-        this.socketIO.to(roomId).emit("goal-celebration-end", {
-          roomId: roomId,
-          timestamp: Date.now(),
-          message: "Game resumed after goal!"
-        });
-      }
-    }, 1000); // 1 second pause
-  }
-
-  broadcastGameEnd(roomId, gameResult) {
-    if (!this.socketIO) return;
-
-    const endData = {
-      type: "game-ended",
-      roomId: roomId,
-      timestamp: Date.now(),
-      result: gameResult.result,
-      winner: gameResult.winner,
-      finalScore: gameResult.finalScore,
-      gameStats: {
-        duration: 120 - gameResult.room.gameState.gameTime,
-        totalGoals:
-          gameResult.finalScore.player1 + gameResult.finalScore.player2,
-        events: gameResult.room.gameState.gameEvents,
-      },
-    };
-
-    console.log(`Broadcasting game end to room ${roomId}:`, endData);
-    this.socketIO.to(roomId).emit("game-ended", endData);
   }
 
   // Enhanced game start with loop
   startRoomGameWithLoop(room) {
-    const startResult = this.startRoomGame(room);
-
-    if (startResult.success) {
-      // Initialize proper player positions for 2D game
-      room.gameState.players.player1.x = 150;
-      room.gameState.players.player1.y = 320;
-      room.gameState.players.player2.x = 650;
-      room.gameState.players.player2.y = 320;
-
-      // Reset ball to center
-      this.resetBallPosition(room);
-
-      // Game loop will be started automatically by coordinator
-      console.log(`Game started in room ${room.id} with 60fps physics loop`);
-    }
-
-    return startResult;
+    // Game loop will be started automatically by coordinator
+    console.log(`Game started in room ${room.id} with 60fps physics loop`);
   }
 
-  // Set Socket.IO instance for broadcasting
-  setSocketIO(io) {
-    this.socketIO = io;
-  }
-
-  // HACKATHON RAPID FIXES - Missing API methods
-  async getLiveGameStats() {
+  // Unified Statistics API
+  getGameStats() {
+    const roomStats = roomManagerService.getRoomStats();
     return {
       totalPlayers: this.connectedPlayers.size,
-      activeRooms: this.gameRooms.size,
-      waitingPlayers: this.waitingPlayers.size,
-      playingPlayers: Array.from(this.gameRooms.values())
-        .filter((room) => room.status === "playing")
-        .reduce((count, room) => count + room.players.length, 0),
+      ...roomStats,
       serverUptime: process.uptime(),
-      timestamp: Date.now()
+      timestamp: Date.now(),
     };
   }
 
-  async getMatchHistory({ page = 1, limit = 20, playerId }) {
-    // For hackathon - return mock data for now
-    const mockMatches = [
-      {
-        id: "match-1",
-        players: ["Player1", "Player2"],
-        score: { player1: 2, player2: 1 },
-        duration: 120,
-        winner: "Player1",
-        timestamp: Date.now() - 3600000
-      },
-      {
-        id: "match-2", 
-        players: ["Player3", "Player4"],
-        score: { player1: 0, player2: 3 },
-        duration: 85,
-        winner: "Player4",
-        timestamp: Date.now() - 7200000
-      }
-    ];
-
-    return {
-      matches: mockMatches.slice((page - 1) * limit, page * limit),
-      total: mockMatches.length
-    };
-  }
-
-  async joinSpecificRoom(playerId, roomId) {
-    const player = this.getPlayer(playerId);
-    if (!player) {
-      return { success: false, reason: "Player not found" };
-    }
-
-    const room = this.getRoom(roomId);
-    if (!room) {
-      return { success: false, reason: "Room not found" };
-    }
-
-    if (room.players.length >= room.maxPlayers) {
-      return { success: false, reason: "Room is full" };
-    }
-
-    const result = this.addPlayerToRoom(room, player);
-    if (!result.success) {
-      return result;
-    }
-
-    return {
-      success: true,
-      room: room.toJSON(),
-      player: player.toJSON()
-    };
-  }
-
-  async leaveSpecificRoom(playerId, roomId) {
-    const player = this.getPlayer(playerId);
-    if (!player) {
-      return { success: false, reason: "Player not found" };
-    }
-
-    const room = this.getRoom(roomId);
-    if (!room) {
-      return { success: false, reason: "Room not found" };
-    }
-
-    const result = this.removePlayerFromRoom(room, playerId);
-    if (!result.success) {
-      return result;
-    }
-
-    // Clean up empty room
-    if (result.isEmpty) {
-      this.deleteRoom(roomId);
-    }
-
-    return {
-      success: true,
-      message: "Left room successfully"
-    };
-  }
-
-  executeKick(room, playerPosition, gamePlayer, ball) {
-    // Calculate kick direction and power based on player position relative to ball
-    const directionX = ball.x - gamePlayer.x;
-    const directionY = ball.y - gamePlayer.y;
-    const distance = Math.sqrt(directionX * directionX + directionY * directionY);
-    
-    if (distance === 0) return null; // Prevent division by zero
-    
-    // Normalize direction
-    const normalizedX = directionX / distance;
-    const normalizedY = directionY / distance;
-    
-    // Calculate kick power (stronger if player is moving)
-    const playerSpeedBonus = Math.abs(gamePlayer.velocityX) + Math.abs(gamePlayer.velocityY);
-    const basePower = 8;
-    const kickPower = basePower + (playerSpeedBonus * 0.5);
-    
-    // Apply kick to ball
-    ball.velocityX = normalizedX * kickPower;
-    ball.velocityY = normalizedY * kickPower * 0.6; // Reduce vertical force
-    ball.lastTouchedBy = playerPosition;
-    
-    // Push ball away from player to prevent sticking
-    const pushDistance = ball.radius + 20;
-    ball.x += normalizedX * pushDistance;
-    ball.y += normalizedY * pushDistance;
-    
-    // Keep ball in bounds
-    const field = room.settings.field;
-    ball.x = Math.max(ball.radius, Math.min(field.width - ball.radius, ball.x));
-    ball.y = Math.max(ball.radius, Math.min(field.groundLevel, ball.y));
-    
-    console.log(`${playerPosition} kicked ball with power ${kickPower.toFixed(1)}`);
-    
-    return {
-      kickPower: kickPower,
-      direction: { x: normalizedX, y: normalizedY },
-      ballVelocity: { x: ball.velocityX, y: ball.velocityY }
-    };
+  // Socket.IO Integration
+  setSocketIO(io) {
+    gameBroadcaster.setSocketIO(io);
   }
 }
 

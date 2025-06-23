@@ -18,8 +18,6 @@ const getDocumentation = async (req, res) => {
       "/players": "GET - Get all connected players",
       "/players/:id": "GET - Get specific player details",
       "/stats": "GET - Live game statistics",
-      "/leaderboard": "GET - Real-time leaderboard",
-      "/match-history": "GET - Recent match history"
     },
     socketEvents: {
       client: {
@@ -28,28 +26,28 @@ const getDocumentation = async (req, res) => {
         "player-input": "Send player input (move, jump, kick)",
         "move-left": "Move player left",
         "move-right": "Move player right",
-        "jump": "Player jump action",
-        "kick": "Kick the ball",
-        "leave-game": "Leave current game/room"
+        jump: "Player jump action",
+        kick: "Kick the ball",
+        "leave-game": "Leave current game/room",
       },
       server: {
-        "welcome": "Welcome message with player ID",
+        welcome: "Welcome message with player ID",
         "player-created": "Player successfully created",
         "room-joined": "Successfully joined a room",
         "match-found": "Match found, game starting",
         "game-state-update": "60fps game state updates",
         "goal-scored": "Goal event with scorer info",
         "game-ended": "Match finished with results",
-        "error": "Game error occurred"
-      }
+        error: "Game error occurred",
+      },
     },
     gameFeatures: {
-      "realTimePhysics": "60fps ball and player physics",
-      "collisionDetection": "Player-ball collision system",
-      "goalDetection": "Automatic goal scoring",
-      "timerSystem": "2-minute match timer",
-      "drawSupport": "Matches can end in ties"
-    }
+      realTimePhysics: "60fps ball and player physics",
+      collisionDetection: "Player-ball collision system",
+      goalDetection: "Automatic goal scoring",
+      timerSystem: "2-minute match timer",
+      drawSupport: "Matches can end in ties",
+    },
   });
 };
 
@@ -113,7 +111,7 @@ const createRoom = async (req, res) => {
  */
 const getStats = async (req, res) => {
   try {
-    const stats = await gameService.getLiveGameStats();
+    const stats = gameService.getGameStats();
 
     res.json({
       success: true,
@@ -122,39 +120,6 @@ const getStats = async (req, res) => {
     });
   } catch (error) {
     console.error("Error getting live game stats:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
-
-/**
- * Get global leaderboard
- */
-const getLeaderboard = async (req, res) => {
-  try {
-    const { page = 1, limit = 20, period = "all" } = req.query;
-
-    const result = await gameService.getLeaderboard({
-      page: parseInt(page),
-      limit: parseInt(limit),
-      period,
-    });
-
-    res.json({
-      success: true,
-      message: "Leaderboard retrieved successfully",
-      data: result.players,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: result.total,
-        totalPages: Math.ceil(result.total / parseInt(limit)),
-      },
-    });
-  } catch (error) {
-    console.error("Error getting leaderboard:", error);
     res.status(500).json({
       success: false,
       message: error.message,
@@ -173,7 +138,7 @@ const joinRoom = async (req, res) => {
     if (!playerId) {
       return res.status(400).json({
         success: false,
-        message: "Player ID is required"
+        message: "Player ID is required",
       });
     }
 
@@ -182,7 +147,7 @@ const joinRoom = async (req, res) => {
     if (!result.success) {
       return res.status(400).json({
         success: false,
-        message: result.reason
+        message: result.reason,
       });
     }
 
@@ -191,8 +156,8 @@ const joinRoom = async (req, res) => {
       message: "Successfully joined room",
       data: {
         room: result.room,
-        player: result.player
-      }
+        player: result.player,
+      },
     });
   } catch (error) {
     console.error("Error joining room:", error);
@@ -214,7 +179,7 @@ const leaveRoom = async (req, res) => {
     if (!playerId) {
       return res.status(400).json({
         success: false,
-        message: "Player ID is required"
+        message: "Player ID is required",
       });
     }
 
@@ -223,50 +188,17 @@ const leaveRoom = async (req, res) => {
     if (!result.success) {
       return res.status(400).json({
         success: false,
-        message: result.reason
+        message: result.reason,
       });
     }
 
     res.json({
       success: true,
       message: "Successfully left room",
-      data: result
+      data: result,
     });
   } catch (error) {
     console.error("Error leaving room:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
-
-/**
- * Get recent match history
- */
-const getMatchHistory = async (req, res) => {
-  try {
-    const { page = 1, limit = 20, playerId } = req.query;
-
-    const result = await gameService.getMatchHistory({
-      page: parseInt(page),
-      limit: parseInt(limit),
-      playerId
-    });
-
-    res.json({
-      success: true,
-      message: "Match history retrieved successfully",
-      data: result.matches || [],
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: result.total || 0,
-        totalPages: Math.ceil((result.total || 0) / parseInt(limit))
-      }
-    });
-  } catch (error) {
-    console.error("Error getting match history:", error);
     res.status(500).json({
       success: false,
       message: error.message,
@@ -285,14 +217,14 @@ const getRoom = async (req, res) => {
     if (!room) {
       return res.status(404).json({
         success: false,
-        message: "Room not found"
+        message: "Room not found",
       });
     }
 
     res.json({
       success: true,
       message: "Room details retrieved successfully",
-      data: room.toJSON()
+      data: room.toJSON(),
     });
   } catch (error) {
     console.error("Error getting room:", error);
@@ -312,7 +244,7 @@ const getPlayers = async (req, res) => {
     res.json({
       success: true,
       message: "Players retrieved successfully",
-      data: players
+      data: players,
     });
   } catch (error) {
     console.error("Error getting players:", error);
@@ -334,14 +266,14 @@ const getPlayer = async (req, res) => {
     if (!player) {
       return res.status(404).json({
         success: false,
-        message: "Player not found"
+        message: "Player not found",
       });
     }
 
     res.json({
       success: true,
       message: "Player details retrieved successfully",
-      data: player.toJSON()
+      data: player.toJSON(),
     });
   } catch (error) {
     console.error("Error getting player:", error);
@@ -357,11 +289,9 @@ module.exports = {
   getRooms,
   createRoom,
   getStats,
-  getLeaderboard,
   joinRoom,
   leaveRoom,
-  getMatchHistory,
   getRoom,
   getPlayers,
-  getPlayer
+  getPlayer,
 };

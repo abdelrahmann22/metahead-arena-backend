@@ -1,17 +1,21 @@
+/**
+ * Player Model - Socket.IO Session Handler
+ *
+ * Purpose: Manages temporary Socket.IO connection sessions
+ * Scope: In-memory only, not persisted to database
+ * Lifespan: While user is connected to Socket.IO
+ *
+ * Note: For persistent user data (stats, NFTs, matches), use User model
+ */
 class Player {
-  constructor(socketId, username) {
+  constructor(socketId, username, userId = null) {
     this.id = socketId;
     this.username = username || `Player-${socketId.slice(0, 5)}`;
+    this.userId = userId; // Link to User model for persistent data
     this.isReady = false;
     this.currentRoom = null;
-    this.isOnline = true;
     this.joinedAt = new Date();
-    this.stats = {
-      wins: 0,
-      losses: 0,
-      gamesPlayed: 0,
-      totalPlayTime: 0,
-    };
+    // Session-only game state (temporary, not persistent)
     this.gameState = {
       position: { x: 0, y: 0 },
       score: 0,
@@ -24,10 +28,9 @@ class Player {
     return {
       id: this.id,
       username: this.username,
+      userId: this.userId,
       isReady: this.isReady,
       currentRoom: this.currentRoom,
-      isOnline: this.isOnline,
-      stats: this.stats,
       joinedAt: this.joinedAt.toISOString(),
     };
   }

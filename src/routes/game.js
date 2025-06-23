@@ -16,9 +16,7 @@ router.post("/rooms/:id/leave", gameController.leaveRoom);
 router.get("/players", gameController.getPlayers);
 router.get("/players/:id", gameController.getPlayer);
 
-// Statistics and leaderboard routes
+// Statistics routes
 router.get("/stats", gameController.getStats);
-router.get("/leaderboard", gameController.getLeaderboard);
-router.get("/match-history", gameController.getMatchHistory);
 
 module.exports = router;

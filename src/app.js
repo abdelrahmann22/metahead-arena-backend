@@ -22,10 +22,12 @@ connectDatabase();
 // Initialize Socket.IO for real-time game functionality
 const io = initializeSocket(server);
 
-// Security middleware - completely disabled for development
-// app.use(helmet({
-//   contentSecurityPolicy: false, // Disable CSP entirely for debugging
-// }));
+// Security middleware
+// app.use(
+//   helmet({
+//     contentSecurityPolicy: false, // Disabled for WebSocket compatibility
+//   })
+// );
 
 // Rate limiting
 const limiter = rateLimit({

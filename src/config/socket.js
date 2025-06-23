@@ -1,19 +1,91 @@
 const socketIo = require("socket.io");
 const gameService = require("../services/gameService");
+const matchService = require("../services/matchService");
+const gameBroadcaster = require("../services/gameBroadcaster");
+const userService = require("../services/userService");
+const nftService = require("../services/nftService");
 
 // Socket event handlers as individual functions
-const handlePlayerJoin = (socket, io, data) => {
-  const result = gameService.createPlayer(socket.id, data.username);
+const handlePlayerJoin = async (socket, io, data) => {
+  try {
+    // Validate required data - only check what exists in User model
+    if (!data || !data.walletAddress) {
+      socket.emit("error", {
+        message: "Wallet address is required",
+        type: "VALIDATION_ERROR",
+      });
+      return;
+    }
 
-  if (result.success) {
-    socket.emit("player-created", {
-      player: result.player.toJSON(),
+    // Create or get user from database
+    const userResult = await userService.createUserFromWallet(
+      data.walletAddress,
+      data.username // username is optional, has default
+    );
+
+    if (!userResult.success) {
+      socket.emit("error", {
+        message: userResult.error,
+        type: "USER_ERROR",
+      });
+      return;
+    }
+
+    const user = userResult.user;
+
+    // Get NFT modifiers if player specifies an NFT
+    let nftModifiers = null;
+    if (data.nftId) {
+      const nftResult = await nftService.getNFTById(data.nftId);
+      if (nftResult.success) {
+        nftModifiers = nftService.getGameModifiers(nftResult.nft);
+      }
+    }
+
+    // Default modifiers if no NFT specified
+    if (!nftModifiers) {
+      nftModifiers = {
+        speedMultiplier: 1.0,
+        jumpMultiplier: 1.0,
+        superkickMultiplier: 1.0,
+      };
+    }
+
+    // Create player with Web3 data
+    const result = gameService.createPlayer(
+      socket.id,
+      data.username,
+      user._id // Link to database user
+    );
+
+    if (result.success) {
+      // Store additional Web3 data in player object
+      result.player.walletAddress = user.walletAddress;
+      result.player.nftModifiers = nftModifiers;
+
+      gameBroadcaster.broadcastPlayerCreated(socket.id, {
+        player: result.player.toJSON(),
+        user: {
+          walletAddress: user.walletAddress,
+        },
+        nftModifiers: nftModifiers,
+      });
+
+      socket.emit("game-status", gameService.getGameStats());
+      console.log(
+        `${result.player.username} (${
+          user.walletAddress
+        }) joined the game with modifiers: ${JSON.stringify(nftModifiers)}`
+      );
+    } else {
+      gameBroadcaster.broadcastError(socket.id, { message: result.reason });
+    }
+  } catch (error) {
+    console.error("Error in handlePlayerJoin:", error);
+    socket.emit("error", {
+      message: "Failed to join game",
+      type: "SERVER_ERROR",
     });
-
-    socket.emit("game-status", gameService.getGameStats());
-    console.log(`${result.player.username} joined the game`);
-  } else {
-    socket.emit("error", { message: result.reason });
   }
 };
 
@@ -29,7 +101,7 @@ const handleFindMatch = (socket, io) => {
     );
 
     // Notify player
-    socket.emit("room-joined", {
+    gameBroadcaster.broadcastRoomJoined(socket.id, {
       roomId: room.id,
       players: room.players.map((p) => p.toJSON()),
       waitingForPlayers: room.maxPlayers - room.players.length,
@@ -44,24 +116,43 @@ const handleFindMatch = (socket, io) => {
 
     // Check if room is full (2 players for 1v1)
     if (room.isFull()) {
-      io.to(room.id).emit("room-full", {
-        message: "Found opponent! Both players can now ready up for 1v1 match.",
-        room: room.toJSON(),
-      });
+      gameBroadcaster.broadcastRoomFull(
+        room.id,
+        "Found opponent! Both players can now ready up for 1v1 match."
+      );
     }
   } else {
-    socket.emit("error", { message: result.reason });
+    gameBroadcaster.broadcastError(socket.id, { message: result.reason });
   }
 };
 
-const handlePlayerReady = (socket, io) => {
+const handlePlayerReady = async (socket, io) => {
   const result = gameService.togglePlayerReady(socket.id);
 
   if (result.success) {
     const { player, room, canStart } = result;
 
+    console.log(`🔄 Player ready status changed:`, {
+      playerId: player.id,
+      username: player.username,
+      isReady: player.isReady,
+      roomId: room.id,
+      playersInRoom: room.players.length,
+      allPlayersReady: canStart,
+      roomStatus: room.status,
+    });
+
+    // Log all players' ready status for debugging
+    console.log(
+      `📊 All players ready status in room ${room.id}:`,
+      room.players.map((p) => ({
+        username: p.username,
+        isReady: p.isReady,
+      }))
+    );
+
     // Notify all players in room
-    io.to(room.id).emit("player-ready-changed", {
+    gameBroadcaster.broadcastPlayerReady(room.id, {
       playerId: player.id,
       username: player.username,
       isReady: player.isReady,
@@ -70,13 +161,44 @@ const handlePlayerReady = (socket, io) => {
 
     // Start 1v1 game if both players are ready
     if (canStart) {
+      console.log(`🚀 Starting game in room ${room.id} - all players ready!`);
       const startResult = gameService.startGame(room.id);
       if (startResult.success) {
         console.log(
           `Game starting in room ${room.id} with players:`,
           room.players.map((p) => p.username)
         );
-        io.to(room.id).emit("game-started", {
+
+        // Create match in database with validated user data
+        try {
+          const player1 = room.players[0];
+          const player2 = room.players[1];
+
+          const matchResult = await matchService.createMatch(
+            {
+              userId: player1.userId, // Now properly set from database
+            },
+            {
+              userId: player2.userId,
+            }
+          );
+
+          if (matchResult.success) {
+            // Start the match in database
+            await matchService.startMatch(matchResult.match._id);
+
+            // Store match ID in room for later use
+            room.matchId = matchResult.match._id;
+
+            console.log(
+              `Database match created with ID: ${matchResult.match._id}`
+            );
+          }
+        } catch (error) {
+          console.error("Error creating database match:", error);
+        }
+
+        gameBroadcaster.broadcastGameStarted(room.id, {
           message: "1v1 Match Starting! Good luck!",
           room: startResult.room.toJSON(),
           matchDuration: startResult.room.settings.matchDuration,
@@ -84,7 +206,7 @@ const handlePlayerReady = (socket, io) => {
       }
     }
   } else {
-    socket.emit("error", { message: result.reason });
+    gameBroadcaster.broadcastError(socket.id, { message: result.reason });
   }
 };
 
@@ -132,6 +254,78 @@ const handleGameAction = (socket, io, data) => {
     console.log(`${player.username} performed action: ${result.action}`);
   } else {
     console.log(`Action failed for ${socket.id}:`, result.reason);
+  }
+};
+
+const handleGameEnd = async (socket, io, data) => {
+  try {
+    const player = gameService.getPlayer(socket.id);
+    if (!player || !player.currentRoom) {
+      socket.emit("error", { message: "Player not in a room" });
+      return;
+    }
+
+    const room = gameService.getRoom(player.currentRoom);
+    if (!room || !room.matchId) {
+      socket.emit("error", { message: "No active match found" });
+      return;
+    }
+
+    // End match in database
+    const matchResult = await matchService.endMatch(
+      room.matchId,
+      data.finalScore, // { player1: 2, player2: 1 }
+      data.duration // Duration in seconds
+    );
+
+    if (matchResult.success) {
+      console.log(`Match ${room.matchId} ended successfully`);
+
+      // Update user stats for both players
+      try {
+        const player1 = room.players[0];
+        const player2 = room.players[1];
+        const winner = matchResult.match.result.winner;
+
+        if (player1.userId) {
+          const outcome =
+            winner === player1.userId
+              ? "win"
+              : winner === "draw"
+              ? "draw"
+              : "loss";
+          await userService.updateUserMatchStats(player1.userId, { outcome });
+        }
+
+        if (player2.userId) {
+          const outcome =
+            winner === player2.userId
+              ? "win"
+              : winner === "draw"
+              ? "draw"
+              : "loss";
+          await userService.updateUserMatchStats(player2.userId, { outcome });
+        }
+
+        console.log(`User stats updated for match ${room.matchId}`);
+      } catch (statsError) {
+        console.error("Error updating user stats:", statsError);
+      }
+
+      // Broadcast match end to all players in room
+      io.to(room.id).emit("match-ended", {
+        message: "Match completed!",
+        finalScore: data.finalScore,
+        duration: data.duration,
+        matchId: room.matchId,
+        winner: matchResult.match.result.winner,
+      });
+    } else {
+      console.error("Error ending match:", matchResult.error);
+    }
+  } catch (error) {
+    console.error("Error in handleGameEnd:", error);
+    socket.emit("error", { message: "Failed to end match" });
   }
 };
 
@@ -233,41 +427,44 @@ function initializeSocket(server) {
     httpCompression: false,
   });
 
-  // Connect GameService to Socket.IO for 60fps broadcasting
+  // Connect services to Socket.IO for broadcasting
   gameService.setSocketIO(io);
+  gameBroadcaster.setSocketIO(io);
 
   // Performance monitoring
   let connectionCount = 0;
-  
+
   io.on("connection", (socket) => {
     connectionCount++;
     console.log(`Player connected: ${socket.id} (Total: ${connectionCount})`);
 
     // Enhanced welcome with server info
-    socket.emit("welcome", {
+    gameBroadcaster.broadcastWelcome(socket.id, {
       message: "Welcome to MetaHead Arena! 1v1 Football Game",
       playerId: socket.id,
       serverTime: Date.now(),
       gameVersion: "1.0.0",
-      features: ["realtime-physics", "60fps-updates", "anti-cheat"]
+      features: ["realtime-physics", "60fps-updates", "anti-cheat"],
     });
 
     // Input rate limiting per socket
     let inputCount = 0;
     let lastInputReset = Date.now();
-    
+
     const checkInputRate = () => {
       const now = Date.now();
-      if (now - lastInputReset > 1000) { // Reset every second
+      if (now - lastInputReset > 1000) {
+        // Reset every second
         inputCount = 0;
         lastInputReset = now;
       }
-      
+
       inputCount++;
-      if (inputCount > 120) { // Max 120 inputs per second
-        socket.emit("error", { 
-          message: "Input rate limit exceeded", 
-          type: "RATE_LIMIT" 
+      if (inputCount > 120) {
+        // Max 120 inputs per second
+        socket.emit("error", {
+          message: "Input rate limit exceeded",
+          type: "RATE_LIMIT",
         });
         return false;
       }
@@ -275,16 +472,22 @@ function initializeSocket(server) {
     };
 
     // Enhanced event handlers with validation
-    socket.on("join-game", (data) => {
+    socket.on("join-game", async (data) => {
       try {
-        if (!data || typeof data.username !== 'string') {
-          socket.emit("error", { message: "Invalid username", type: "VALIDATION_ERROR" });
+        if (!data || !data.walletAddress) {
+          socket.emit("error", {
+            message: "Wallet address is required",
+            type: "VALIDATION_ERROR",
+          });
           return;
         }
-        handlePlayerJoin(socket, io, data);
+        await handlePlayerJoin(socket, io, data);
       } catch (error) {
         console.error(`Error in join-game:`, error);
-        socket.emit("error", { message: "Internal server error", type: "SERVER_ERROR" });
+        socket.emit("error", {
+          message: "Internal server error",
+          type: "SERVER_ERROR",
+        });
       }
     });
 
@@ -293,19 +496,31 @@ function initializeSocket(server) {
         handleFindMatch(socket, io);
       } catch (error) {
         console.error(`Error in find-match:`, error);
-        socket.emit("error", { message: "Matchmaking error", type: "SERVER_ERROR" });
+        socket.emit("error", {
+          message: "Matchmaking error",
+          type: "SERVER_ERROR",
+        });
       }
     });
 
     socket.on("player-ready", () => handlePlayerReady(socket, io));
     socket.on("ready", () => handlePlayerReady(socket, io));
 
+    // Game end event
+    socket.on("game-end", (data) => handleGameEnd(socket, io, data));
+
     // Enhanced input handling with rate limiting
-    const inputEvents = ["move-left", "move-right", "jump", "kick", "stop-move"];
-    inputEvents.forEach(eventName => {
+    const inputEvents = [
+      "move-left",
+      "move-right",
+      "jump",
+      "kick",
+      "stop-move",
+    ];
+    inputEvents.forEach((eventName) => {
       socket.on(eventName, (data) => {
         if (!checkInputRate()) return;
-        
+
         const actionName = eventName === "stop-move" ? "stop" : eventName;
         handlePlayerMovement(socket, actionName, data || { pressed: true });
       });
@@ -315,7 +530,10 @@ function initializeSocket(server) {
     socket.on("player-input", (data) => {
       if (!checkInputRate()) return;
       if (!data || !data.action) {
-        socket.emit("error", { message: "Invalid input data", type: "VALIDATION_ERROR" });
+        socket.emit("error", {
+          message: "Invalid input data",
+          type: "VALIDATION_ERROR",
+        });
         return;
       }
       handlePlayerInput(socket, io, data);
@@ -323,11 +541,13 @@ function initializeSocket(server) {
 
     // Room management
     socket.on("leave-room", () => handleLeaveRoom(socket, io));
-    
+
     // Connection management with cleanup
     socket.on("disconnect", (reason) => {
       connectionCount--;
-      console.log(`Player disconnected: ${socket.id} (Reason: ${reason}, Total: ${connectionCount})`);
+      console.log(
+        `Player disconnected: ${socket.id} (Reason: ${reason}, Total: ${connectionCount})`
+      );
       handleDisconnect(socket, io);
     });
 
@@ -337,27 +557,28 @@ function initializeSocket(server) {
 
     // Heartbeat for connection quality monitoring
     socket.on("ping", (callback) => {
-      if (typeof callback === 'function') {
+      if (typeof callback === "function") {
         callback(Date.now());
       }
     });
   });
 
-  // Server-side performance monitoring
+  // Performance monitoring (logs only)
   setInterval(() => {
     const stats = {
       connections: connectionCount,
       rooms: gameService.gameRooms.size,
-      activeGames: Array.from(gameService.gameRooms.values())
-        .filter(room => room.status === "playing").length,
-      uptime: process.uptime(),
-      memory: process.memoryUsage(),
-      timestamp: Date.now()
+      activeGames: Array.from(gameService.gameRooms.values()).filter(
+        (room) => room.status === "playing"
+      ).length,
+      uptime: Math.floor(process.uptime()),
+      memory: Math.floor(process.memoryUsage().heapUsed / 1024 / 1024),
     };
-    
-    // Emit to admin clients if needed
-    io.emit("server-stats", stats);
-  }, 30000); // Every 30 seconds
+
+    console.log(
+      `Server Stats: ${stats.connections} players, ${stats.rooms} rooms, ${stats.activeGames} active games, ${stats.memory}MB RAM`
+    );
+  }, 60000); // Every 60 seconds
 
   return io;
 }

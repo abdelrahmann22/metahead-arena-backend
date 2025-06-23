@@ -73,7 +73,7 @@ class GameRoom {
         friction: 0.85, // Ground friction
         airResistance: 0.98, // Air resistance
         ballBounce: 0.7, // Ball bounce damping
-        playerSpeed: 4, // Horizontal movement speed
+        playerSpeed: 5, // Horizontal movement speed (balanced for gameplay)
         jumpPower: 16, // Initial jump velocity
         maxVelocity: 20, // Maximum velocity cap
       },
@@ -107,7 +107,7 @@ class GameRoom {
     }
 
     // Check if player already in room
-    if (this.players.find(p => p.id === player.id)) {
+    if (this.players.find((p) => p.id === player.id)) {
       return { success: false, reason: "Player already in room" };
     }
 
@@ -121,14 +121,16 @@ class GameRoom {
       player.position = "player2";
     }
 
-    console.log(`Player ${player.username} added to room ${this.id} as ${player.position}`);
+    console.log(
+      `Player ${player.username} added to room ${this.id} as ${player.position}`
+    );
 
     return { success: true, player, room: this };
   }
 
   // Remove player from room
   removePlayer(socketId) {
-    const playerIndex = this.players.findIndex(p => p.id === socketId);
+    const playerIndex = this.players.findIndex((p) => p.id === socketId);
     if (playerIndex === -1) {
       return { success: false, reason: "Player not in room" };
     }
@@ -140,10 +142,10 @@ class GameRoom {
 
     console.log(`Player ${player.username} removed from room ${this.id}`);
 
-    return { 
-      success: true, 
-      player, 
-      isEmpty: this.players.length === 0 
+    return {
+      success: true,
+      player,
+      isEmpty: this.players.length === 0,
     };
   }
 
@@ -154,7 +156,25 @@ class GameRoom {
 
   // Check if room can start (has 2 players)
   canStart() {
-    return this.players.length === 2 && this.players.every(p => p.isReady);
+    const hasEnoughPlayers = this.players.length === 2;
+    const allReady = this.players.every((p) => p.isReady);
+    const isWaiting = this.status === "waiting";
+    const result = hasEnoughPlayers && allReady && isWaiting;
+
+    console.log(`🔍 canStart() check for room ${this.id}:`, {
+      hasEnoughPlayers,
+      allReady,
+      isWaiting,
+      currentStatus: this.status,
+      canStart: result,
+      playerCount: this.players.length,
+      players: this.players.map((p) => ({
+        username: p.username,
+        isReady: p.isReady,
+      })),
+    });
+
+    return result;
   }
 
   // Pure data transformation only - no business logic

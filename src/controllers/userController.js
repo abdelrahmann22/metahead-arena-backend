@@ -1,0 +1,188 @@
+const userService = require("../services/userService");
+
+/**
+ * Create or login user with wallet address
+ */
+const createOrLoginUser = async (req, res) => {
+  try {
+    const { walletAddress, username } = req.body;
+
+    if (!walletAddress) {
+      return res.status(400).json({
+        success: false,
+        message: "Wallet address is required",
+      });
+    }
+
+    const result = await userService.createUserFromWallet(
+      walletAddress,
+      username
+    );
+
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        message: result.error,
+      });
+    }
+
+    res.json({
+      success: true,
+      message: result.isNewUser
+        ? "User created successfully"
+        : "User logged in successfully",
+      data: {
+        user: result.user,
+        isNewUser: result.isNewUser,
+      },
+    });
+  } catch (error) {
+    console.error("Error creating/logging user:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+/**
+ * Get user by wallet address
+ */
+const getUserByWallet = async (req, res) => {
+  try {
+    const { walletAddress } = req.params;
+
+    if (!walletAddress) {
+      return res.status(400).json({
+        success: false,
+        message: "Wallet address is required",
+      });
+    }
+
+    const result = await userService.findUserByWallet(walletAddress);
+
+    if (!result.success || !result.user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "User retrieved successfully",
+      data: result.user,
+    });
+  } catch (error) {
+    console.error("Error getting user by wallet:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+/**
+ * Update user match statistics
+ */
+const updateMatchStats = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { outcome } = req.body;
+
+    if (!userId || !outcome) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID and outcome are required",
+      });
+    }
+
+    if (!["win", "loss", "draw"].includes(outcome)) {
+      return res.status(400).json({
+        success: false,
+        message: "Outcome must be win, loss, or draw",
+      });
+    }
+
+    const result = await userService.updateUserMatchStats(userId, { outcome });
+
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        message: result.error,
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "User match stats updated successfully",
+      data: result.user,
+    });
+  } catch (error) {
+    console.error("Error updating match stats:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+/**
+ * Get user profile with stats
+ */
+const getUserProfile = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required",
+      });
+    }
+
+    const result = await userService.findUserByWallet(userId);
+
+    if (!result.success || !result.user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Format user profile data
+    const profile = {
+      id: result.user._id,
+      walletAddress: result.user.walletAddress,
+      username: result.user.username,
+      joinedAt: result.user.joinedAt,
+      stats: {
+        wins: result.user.gameStats.wins,
+        losses: result.user.gameStats.losses,
+        draws: result.user.gameStats.draws,
+        totalMatches: result.user.gameStats.totalMatches,
+      },
+      nfts: result.user.nfts,
+      equippedNFT: result.user.equippedNFT,
+    };
+
+    res.json({
+      success: true,
+      message: "User profile retrieved successfully",
+      data: profile,
+    });
+  } catch (error) {
+    console.error("Error getting user profile:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+module.exports = {
+  createOrLoginUser,
+  getUserByWallet,
+  updateMatchStats,
+  getUserProfile,
+};
