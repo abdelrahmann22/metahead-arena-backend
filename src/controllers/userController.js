@@ -83,51 +83,6 @@ const getUserByWallet = async (req, res) => {
 };
 
 /**
- * Update user match statistics
- */
-const updateMatchStats = async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const { outcome } = req.body;
-
-    if (!userId || !outcome) {
-      return res.status(400).json({
-        success: false,
-        message: "User ID and outcome are required",
-      });
-    }
-
-    if (!["win", "loss", "draw"].includes(outcome)) {
-      return res.status(400).json({
-        success: false,
-        message: "Outcome must be win, loss, or draw",
-      });
-    }
-
-    const result = await userService.updateUserMatchStats(userId, { outcome });
-
-    if (!result.success) {
-      return res.status(400).json({
-        success: false,
-        message: result.error,
-      });
-    }
-
-    res.json({
-      success: true,
-      message: "User match stats updated successfully",
-      data: result.user,
-    });
-  } catch (error) {
-    console.error("Error updating match stats:", error);
-    res.status(500).json({
-      success: false,
-      message: "Internal server error",
-    });
-  }
-};
-
-/**
  * Get user profile with stats
  */
 const getUserProfile = async (req, res) => {
@@ -183,6 +138,5 @@ const getUserProfile = async (req, res) => {
 module.exports = {
   createOrLoginUser,
   getUserByWallet,
-  updateMatchStats,
   getUserProfile,
 };

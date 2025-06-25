@@ -32,9 +32,9 @@ class HeadBallClient {
     this.connectSocket();
     this.setupEventListeners();
     this.setupKeyboardControls();
-    this.log("🚀 MetaHead Arena - Head Ball Client initialized");
+    this.log("MetaHead Arena - Head Ball Client initialized");
     this.log(
-      "🎮 Keyboard Controls: WASD / Arrow Keys to move, Space to jump, S to kick"
+      "Keyboard Controls: WASD / Arrow Keys to move, Space to jump, S to kick"
     );
   }
 
@@ -94,11 +94,11 @@ class HeadBallClient {
       });
 
       this.socket.on("connect_error", (error) => {
-        this.log(`❌ Connection error: ${error.message}`, "error");
+        this.log(`Connection error: ${error.message}`, "error");
         this.updateConnectionStatus("Connection Error", false);
       });
     } catch (error) {
-      this.log(`❌ Socket initialization error: ${error.message}`, "error");
+      this.log(`Socket initialization error: ${error.message}`, "error");
     }
   }
 
@@ -108,7 +108,7 @@ class HeadBallClient {
   handleConnection() {
     this.isConnected = true;
     this.updateConnectionStatus("Connected", true);
-    this.log("✅ Connected to MetaHead Arena server!", "success");
+    this.log("Connected to MetaHead Arena server!", "success");
 
     // Enable join game button
     const joinBtn = document.getElementById("joinGameBtn");
@@ -123,7 +123,7 @@ class HeadBallClient {
   handleDisconnection() {
     this.isConnected = false;
     this.updateConnectionStatus("Disconnected", false);
-    this.log("❌ Disconnected from server", "error");
+    this.log("Disconnected from server", "error");
 
     // Reset all states
     this.resetGameState();
@@ -135,14 +135,14 @@ class HeadBallClient {
   handleWelcome(data) {
     this.playerId = data.playerId;
     this.updatePlayerInfo("playerId", data.playerId);
-    this.log(`👋 ${data.message}`, "info");
+    this.log(`${data.message}`, "info");
   }
 
   /**
    * Handle player creation
    */
   handlePlayerCreated(data) {
-    this.log(`👤 Player created: ${data.player.username}`, "success");
+    this.log(`Player created: ${data.player.username}`, "success");
   }
 
   /**
@@ -155,7 +155,7 @@ class HeadBallClient {
       "playersInRoom",
       `${data.players ? data.players.length : 1}/2`
     );
-    this.log(`🏠 Joined room: ${data.roomId}`, "success");
+    this.log(`Joined room: ${data.roomId}`, "success");
 
     // Enable ready button
     const readyBtn = document.getElementById("toggleReadyBtn");
@@ -168,7 +168,7 @@ class HeadBallClient {
    * Handle room full
    */
   handleRoomFull(data) {
-    this.log(`🎯 ${data.message}`, "info");
+    this.log(`${data.message}`, "info");
     this.updatePlayerInfo("playersInRoom", "2/2");
   }
 
@@ -176,9 +176,9 @@ class HeadBallClient {
    * Handle player ready status change
    */
   handlePlayerReadyChanged(data) {
-    console.log("🔄 handlePlayerReadyChanged called with data:", data);
+    console.log("handlePlayerReadyChanged called with data:", data);
     this.log(
-      `🔄 ${data.username} is ${data.isReady ? "ready" : "not ready"}`,
+      `${data.username} is ${data.isReady ? "ready" : "not ready"}`,
       "info"
     );
 
@@ -187,14 +187,14 @@ class HeadBallClient {
       this.isReady = data.isReady;
       this.updateReadyStatus();
       this.log(
-        `✅ Ready status confirmed: ${data.isReady ? "Ready" : "Not Ready"}`,
+        `Ready status confirmed: ${data.isReady ? "Ready" : "Not Ready"}`,
         "success"
       );
     }
 
     if (data.allPlayersReady) {
-      this.log("🚀 All players ready! Game starting...", "success");
-      this.log("⏳ Waiting for game-started event from server...", "info");
+      this.log("All players ready! Game starting...", "success");
+      this.log("Waiting for game-started event from server...", "info");
     } else {
       this.log(
         `⏸️ Not all players ready yet (allPlayersReady: ${data.allPlayersReady})`,
@@ -207,16 +207,16 @@ class HeadBallClient {
    * Handle game started
    */
   handleGameStarted(data) {
-    console.log("🎮 handleGameStarted called with data:", data);
+    console.log("handleGameStarted called with data:", data);
     this.gameActive = true;
-    this.log(`🎮 ${data.message}`, "success");
-    this.log(`🚀 Game is now active! Controls enabled.`, "success");
+    this.log(`${data.message}`, "success");
+    this.log(`Game is now active! Controls enabled.`, "success");
 
     // Initialize game state from room data
     if (data.room && data.room.gameState) {
       this.gameState = data.room.gameState;
       this.updateGameField(data.room.gameState);
-      this.log("🎯 Initial game state loaded from room data", "success");
+      this.log("Initial game state loaded from room data", "success");
     } else {
       // Fallback: Initialize with default game state
       this.gameState = {
@@ -230,7 +230,7 @@ class HeadBallClient {
         isActive: true,
       };
       this.updateGameField(this.gameState);
-      this.log("🎯 Initialized with default game state", "info");
+      this.log("Initialized with default game state", "info");
     }
 
     // Update UI for game mode
@@ -249,7 +249,7 @@ class HeadBallClient {
    */
   handleGameStateUpdate(data) {
     if (!data) {
-      console.warn("⚠️ Received empty game-state-update data");
+      console.warn("Received empty game-state-update data");
       return;
     }
 
@@ -263,13 +263,13 @@ class HeadBallClient {
     } else if (data.changes && this.gameState) {
       // Apply delta changes to existing state
       gameStateToUse = this.applyGameStateChanges(this.gameState, data.changes);
-      console.log("🔄 Applied delta changes to game state");
+      console.log("Applied delta changes to game state");
     } else if (data.gameState) {
       // Fallback: direct gameState property (if server format changes)
       gameStateToUse = data.gameState;
-      console.log("📋 Using direct gameState property");
+      console.log("Using direct gameState property");
     } else {
-      console.warn("⚠️ No usable game state data in update:", data);
+      console.warn("No usable game state data in update:", data);
       return;
     }
 
@@ -327,7 +327,7 @@ class HeadBallClient {
 
       return newState;
     } catch (error) {
-      console.error("❌ Error applying game state changes:", error);
+      console.error("Error applying game state changes:", error);
       return currentState; // Return original state on error
     }
   }
@@ -336,9 +336,9 @@ class HeadBallClient {
    * Handle goal scored
    */
   handleGoalScored(data) {
-    this.log(`⚽ GOAL! ${data.scorer} scored!`, "success");
+    this.log(`GOAL! ${data.scorer} scored!`, "success");
     this.log(
-      `📊 Score: ${data.newScore.player1} - ${data.newScore.player2}`,
+      `Score: ${data.newScore.player1} - ${data.newScore.player2}`,
       "info"
     );
 
@@ -351,16 +351,16 @@ class HeadBallClient {
    */
   handleGameEnded(data) {
     this.gameActive = false;
-    this.log(`🏁 Game Over! Result: ${data.result}`, "success");
+    this.log(`Game Over! Result: ${data.result}`, "success");
     this.log(
-      `📊 Final Score: ${data.finalScore.player1} - ${data.finalScore.player2}`,
+      `Final Score: ${data.finalScore.player1} - ${data.finalScore.player2}`,
       "info"
     );
 
     if (data.winner) {
-      this.log(`🏆 Winner: ${data.winner.username || data.winner}!`, "success");
+      this.log(`Winner: ${data.winner.username || data.winner}!`, "success");
     } else {
-      this.log(`🤝 It's a draw!`, "info");
+      this.log(`It's a draw!`, "info");
     }
 
     // Reset UI
@@ -378,11 +378,11 @@ class HeadBallClient {
    * Handle error messages
    */
   handleError(data) {
-    this.log(`❌ Error: ${data.message}`, "error");
+    this.log(`Error: ${data.message}`, "error");
 
     // Show error in UI if it's a ready-related error
     if (data.message && data.message.includes("ready")) {
-      this.log(`🚫 Ready State Error: ${data.message}`, "error");
+      this.log(`Ready State Error: ${data.message}`, "error");
       // Reset ready state on error
       this.isReady = false;
       this.updateReadyStatus();
@@ -592,9 +592,9 @@ class HeadBallClient {
       joinBtn.disabled = false;
     }
 
-    this.log(`🔗 Wallet connected: ${walletAddress}`, "success");
+    this.log(`Wallet connected: ${walletAddress}`, "success");
     this.log(
-      `👤 Username will be: ${defaultUsername} (auto-generated by schema)`,
+      `Username will be: ${defaultUsername} (auto-generated by schema)`,
       "info"
     );
   }
@@ -631,7 +631,7 @@ class HeadBallClient {
     `;
 
     this.log(
-      `🎨 NFT modifiers updated: Speed ${modifiers.speed}x, Jump ${modifiers.jump}x, Kick ${modifiers.kick}x`,
+      `NFT modifiers updated: Speed ${modifiers.speed}x, Jump ${modifiers.jump}x, Kick ${modifiers.kick}x`,
       "info"
     );
   }
@@ -641,12 +641,12 @@ class HeadBallClient {
    */
   joinGame() {
     if (!this.isConnected) {
-      this.log("❌ Not connected to server", "error");
+      this.log("Not connected to server", "error");
       return;
     }
 
     if (!this.walletAddress) {
-      this.log("❌ Please connect your wallet first", "error");
+      this.log("Please connect your wallet first", "error");
       return;
     }
 
@@ -659,34 +659,31 @@ class HeadBallClient {
     };
 
     this.socket.emit("join-game", joinData);
-    this.log(`🎮 Joining game with wallet ${this.walletAddress}...`, "info");
+    this.log(`Joining game with wallet ${this.walletAddress}...`, "info");
 
     if (selectedNFT) {
-      this.log(`🎨 Using NFT: ${selectedNFT}`, "info");
+      this.log(`Using NFT: ${selectedNFT}`, "info");
     }
   }
 
   findMatch() {
     if (!this.isConnected) {
-      this.log("❌ Not connected to server", "error");
+      this.log("Not connected to server", "error");
       return;
     }
 
     this.socket.emit("find-match");
-    this.log("🔍 Finding match...", "info");
+    this.log("Finding match...", "info");
   }
 
   toggleReady() {
     if (!this.roomId) {
-      this.log("❌ Not in a room", "error");
+      this.log("Not in a room", "error");
       return;
     }
 
     if (this.gameActive) {
-      this.log(
-        "❌ Cannot change ready status - game is already active",
-        "error"
-      );
+      this.log("Cannot change ready status - game is already active", "error");
       return;
     }
 
@@ -696,21 +693,21 @@ class HeadBallClient {
 
     this.socket.emit("ready");
     this.log(
-      `🔄 ${this.isReady ? "Setting ready" : "Canceling ready"}...`,
+      `${this.isReady ? "Setting ready" : "Canceling ready"}...`,
       "info"
     );
-    this.log(`📤 Sent ready event to server`, "debug");
+    this.log(`Sent ready event to server`, "debug");
   }
 
   leaveRoom() {
     if (!this.roomId) {
-      this.log("❌ Not in a room", "error");
+      this.log("Not in a room", "error");
       return;
     }
 
     this.socket.emit("leave-game");
     this.resetGameState();
-    this.log("👋 Left the room", "info");
+    this.log("Left the room", "info");
   }
 
   /**

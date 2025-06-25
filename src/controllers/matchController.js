@@ -97,7 +97,52 @@ const getUserMatchHistory = async (req, res) => {
   }
 };
 
+/**
+ * Get specific match for a specific user
+ */
+const getUserSpecificMatch = async (req, res) => {
+  try {
+    const { userId, matchId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required",
+      });
+    }
+
+    if (!matchId) {
+      return res.status(400).json({
+        success: false,
+        message: "Match ID is required",
+      });
+    }
+
+    const result = await matchService.getUserSpecificMatch(userId, matchId);
+
+    if (!result.success) {
+      return res.status(404).json({
+        success: false,
+        message: result.error,
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "User specific match retrieved successfully",
+      data: result.data,
+    });
+  } catch (error) {
+    console.error("Error getting user specific match:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
 module.exports = {
   getMatchById,
   getUserMatchHistory,
+  getUserSpecificMatch,
 };

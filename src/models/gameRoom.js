@@ -161,7 +161,7 @@ class GameRoom {
     const isWaiting = this.status === "waiting";
     const result = hasEnoughPlayers && allReady && isWaiting;
 
-    console.log(`🔍 canStart() check for room ${this.id}:`, {
+    console.log(`canStart() check for room ${this.id}:`, {
       hasEnoughPlayers,
       allReady,
       isWaiting,
@@ -181,6 +181,7 @@ class GameRoom {
   toJSON() {
     return {
       id: this.id,
+      code: this.code, // Include room code for sharing
       players: this.players.map((p) => p.toJSON()),
       maxPlayers: this.maxPlayers,
       status: this.status,

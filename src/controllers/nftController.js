@@ -228,34 +228,6 @@ const getNFTGameModifiers = async (req, res) => {
   }
 };
 
-/**
- * Seed sample NFTs for testing (DEV ONLY)
- */
-const seedSampleNFTs = async (req, res) => {
-  try {
-    const result = await nftService.seedSampleNFTs();
-
-    if (!result.success) {
-      return res.status(400).json({
-        success: false,
-        message: result.error,
-      });
-    }
-
-    res.json({
-      success: true,
-      message: "Sample NFTs seeded successfully",
-      data: result.nfts,
-    });
-  } catch (error) {
-    console.error("Error seeding sample NFTs:", error);
-    res.status(500).json({
-      success: false,
-      message: "Internal server error",
-    });
-  }
-};
-
 module.exports = {
   getAllNFTs,
   getNFTById,
@@ -263,5 +235,4 @@ module.exports = {
   getUserNFTs,
   getUserNFT,
   getNFTGameModifiers,
-  seedSampleNFTs,
 };

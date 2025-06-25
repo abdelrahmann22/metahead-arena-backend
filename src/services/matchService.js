@@ -192,6 +192,70 @@ class MatchService {
       return { success: false, error: error.message };
     }
   }
+
+  /**
+   * Get specific match for a specific user (for HTTP API)
+   */
+  async getUserSpecificMatch(userId, matchId) {
+    try {
+      const match = await Match.findOne({
+        _id: matchId,
+        "players.user": userId,
+      })
+        .populate("players.user", "username walletAddress")
+        .populate("players.nft", "name power")
+        .populate("result.winner", "username walletAddress");
+
+      if (!match) {
+        return {
+          success: false,
+          error: "Match not found or user not in this match",
+        };
+      }
+
+      // Find the user's player data in the match
+      const userPlayer = match.players.find(
+        (player) => player.user._id.toString() === userId
+      );
+      const opponentPlayer = match.players.find(
+        (player) => player.user._id.toString() !== userId
+      );
+
+      // Determine user's outcome
+      let userOutcome = "draw";
+      if (match.result.winner) {
+        if (match.result.winner._id.toString() === userId) {
+          userOutcome = "win";
+        } else {
+          userOutcome = "loss";
+        }
+      }
+
+      // Create user-specific match data
+      const userMatchData = {
+        match: match,
+        userPlayer: userPlayer,
+        opponent: opponentPlayer,
+        userOutcome: userOutcome,
+        userStats: {
+          goals: userPlayer ? userPlayer.goals : 0,
+          position: userPlayer ? userPlayer.position : null,
+          nft: userPlayer ? userPlayer.nft : null,
+        },
+        opponentStats: {
+          goals: opponentPlayer ? opponentPlayer.goals : 0,
+          position: opponentPlayer ? opponentPlayer.position : null,
+          nft: opponentPlayer ? opponentPlayer.nft : null,
+          username: opponentPlayer ? opponentPlayer.user.username : "Unknown",
+        },
+      };
+
+      return { success: true, data: userMatchData };
+    } catch (error) {
+      console.error("Error getting user specific match:", error);
+      return { success: false, error: error.message };
+    }
+  }
 }
 
 module.exports = new MatchService();

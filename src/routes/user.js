@@ -3,16 +3,99 @@ const userController = require("../controllers/userController");
 
 const router = express.Router();
 
-// POST /api/users/auth - Create or login user with wallet
+/**
+ * @swagger
+ * /api/users/auth:
+ *   post:
+ *     summary: Create or login user with wallet
+ *     tags: [Users]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - walletAddress
+ *             properties:
+ *               walletAddress:
+ *                 type: string
+ *                 description: User's wallet address
+ *               username:
+ *                 type: string
+ *                 description: User's display name
+ *     responses:
+ *       200:
+ *         description: User successfully authenticated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/User'
+ *       400:
+ *         description: Bad request
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.post("/auth", userController.createOrLoginUser);
 
-// GET /api/users/wallet/:walletAddress - Get user by wallet address
+/**
+ * @swagger
+ * /api/users/wallet/{walletAddress}:
+ *   get:
+ *     summary: Get user by wallet address
+ *     tags: [Users]
+ *     parameters:
+ *       - in: path
+ *         name: walletAddress
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User's wallet address
+ *     responses:
+ *       200:
+ *         description: User found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/User'
+ *       404:
+ *         description: User not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.get("/wallet/:walletAddress", userController.getUserByWallet);
 
-// GET /api/users/profile/:userId - Get user profile with stats
+/**
+ * @swagger
+ * /api/users/profile/{userId}:
+ *   get:
+ *     summary: Get user profile with stats
+ *     tags: [Users]
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User's database ID
+ *     responses:
+ *       200:
+ *         description: User profile retrieved
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/User'
+ *       404:
+ *         description: User not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.get("/profile/:userId", userController.getUserProfile);
-
-// PUT /api/users/:userId/match-stats - Update user match statistics
-router.put("/:userId/match-stats", userController.updateMatchStats);
 
 module.exports = router;

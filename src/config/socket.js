@@ -126,13 +126,77 @@ const handleFindMatch = (socket, io) => {
   }
 };
 
+const handleJoinRoomByCode = async (socket, io, data) => {
+  try {
+    const { roomCode } = data;
+
+    if (!roomCode) {
+      socket.emit("error", {
+        message: "Room code is required",
+        type: "VALIDATION_ERROR",
+      });
+      return;
+    }
+
+    const result = await gameService.joinRoomByCode(socket.id, roomCode);
+
+    if (result.success) {
+      const room = result.room;
+      socket.join(room.id);
+
+      console.log(
+        `Player ${socket.id} joined room with code ${roomCode} (${room.id}). Players in room: ${room.players.length}`
+      );
+
+      // Notify player
+      gameBroadcaster.broadcastRoomJoined(socket.id, {
+        roomId: room.id,
+        roomCode: roomCode,
+        players: room.players.map((p) => p.toJSON()),
+        waitingForPlayers: room.maxPlayers - room.players.length,
+        gameMode: room.gameMode || "1v1",
+        roomType: "code", // Indicate this was a code-based join
+      });
+
+      // Notify other players in room
+      socket.to(room.id).emit("player-joined-room", {
+        player: gameService.getPlayer(socket.id).toJSON(),
+        waitingForPlayers: room.maxPlayers - room.players.length,
+        joinType: "code",
+      });
+
+      // Check if room is full
+      if (room.isFull()) {
+        gameBroadcaster.broadcastRoomFull(
+          room.id,
+          `Room is full! All players can now ready up for ${
+            room.gameMode || "1v1"
+          } match.`
+        );
+      }
+    } else {
+      socket.emit("error", {
+        message: result.reason || "Failed to join room",
+        type: "ROOM_JOIN_ERROR",
+        roomCode: roomCode,
+      });
+    }
+  } catch (error) {
+    console.error("Error in handleJoinRoomByCode:", error);
+    socket.emit("error", {
+      message: "Failed to join room",
+      type: "SERVER_ERROR",
+    });
+  }
+};
+
 const handlePlayerReady = async (socket, io) => {
   const result = gameService.togglePlayerReady(socket.id);
 
   if (result.success) {
     const { player, room, canStart } = result;
 
-    console.log(`🔄 Player ready status changed:`, {
+    console.log(`Player ready status changed:`, {
       playerId: player.id,
       username: player.username,
       isReady: player.isReady,
@@ -144,7 +208,7 @@ const handlePlayerReady = async (socket, io) => {
 
     // Log all players' ready status for debugging
     console.log(
-      `📊 All players ready status in room ${room.id}:`,
+      `All players ready status in room ${room.id}:`,
       room.players.map((p) => ({
         username: p.username,
         isReady: p.isReady,
@@ -161,7 +225,7 @@ const handlePlayerReady = async (socket, io) => {
 
     // Start 1v1 game if both players are ready
     if (canStart) {
-      console.log(`🚀 Starting game in room ${room.id} - all players ready!`);
+      console.log(`Starting game in room ${room.id} - all players ready!`);
       const startResult = gameService.startGame(room.id);
       if (startResult.success) {
         console.log(
@@ -498,6 +562,19 @@ function initializeSocket(server) {
         console.error(`Error in find-match:`, error);
         socket.emit("error", {
           message: "Matchmaking error",
+          type: "SERVER_ERROR",
+        });
+      }
+    });
+
+    // Join specific room by ID
+    socket.on("join-room-by-code", (data) => {
+      try {
+        handleJoinRoomByCode(socket, io, data);
+      } catch (error) {
+        console.error(`Error in join-specific-room:`, error);
+        socket.emit("error", {
+          message: "Failed to join specific room",
           type: "SERVER_ERROR",
         });
       }

@@ -227,7 +227,7 @@ class PhysicsEngine {
     const ballRadius = ball.radius;
 
     console.log(
-      `🔍 Goal check - Ball: (${ball.x.toFixed(1)}, ${ball.y.toFixed(
+      `Goal check - Ball: (${ball.x.toFixed(1)}, ${ball.y.toFixed(
         1
       )}), GoalY: ${goalY}, GroundLevel: ${field.groundLevel}`
     );

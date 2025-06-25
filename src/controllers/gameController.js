@@ -1,57 +1,6 @@
 const gameService = require("../services/gameService");
 
 /**
- * Get game management documentation
- */
-const getDocumentation = async (req, res) => {
-  res.json({
-    success: true,
-    message: "Head Ball Game - Real-time Game Management API",
-    description: "Active game management and real-time operations",
-    endpoints: {
-      "/": "GET - Game API documentation",
-      "/rooms": "GET - Get available game rooms",
-      "/rooms/create": "POST - Create a new game room",
-      "/rooms/:id": "GET - Get specific room details",
-      "/rooms/:id/join": "POST - Join a specific room",
-      "/rooms/:id/leave": "POST - Leave a specific room",
-      "/players": "GET - Get all connected players",
-      "/players/:id": "GET - Get specific player details",
-      "/stats": "GET - Live game statistics",
-    },
-    socketEvents: {
-      client: {
-        "join-game": "Join the game with username",
-        "find-match": "Join matchmaking for 1v1",
-        "player-input": "Send player input (move, jump, kick)",
-        "move-left": "Move player left",
-        "move-right": "Move player right",
-        jump: "Player jump action",
-        kick: "Kick the ball",
-        "leave-game": "Leave current game/room",
-      },
-      server: {
-        welcome: "Welcome message with player ID",
-        "player-created": "Player successfully created",
-        "room-joined": "Successfully joined a room",
-        "match-found": "Match found, game starting",
-        "game-state-update": "60fps game state updates",
-        "goal-scored": "Goal event with scorer info",
-        "game-ended": "Match finished with results",
-        error: "Game error occurred",
-      },
-    },
-    gameFeatures: {
-      realTimePhysics: "60fps ball and player physics",
-      collisionDetection: "Player-ball collision system",
-      goalDetection: "Automatic goal scoring",
-      timerSystem: "2-minute match timer",
-      drawSupport: "Matches can end in ties",
-    },
-  });
-};
-
-/**
  * Get available game rooms
  */
 const getRooms = async (req, res) => {
@@ -128,85 +77,6 @@ const getStats = async (req, res) => {
 };
 
 /**
- * Join a specific game room
- */
-const joinRoom = async (req, res) => {
-  try {
-    const { id: roomId } = req.params;
-    const { playerId } = req.body;
-
-    if (!playerId) {
-      return res.status(400).json({
-        success: false,
-        message: "Player ID is required",
-      });
-    }
-
-    const result = await gameService.joinSpecificRoom(playerId, roomId);
-
-    if (!result.success) {
-      return res.status(400).json({
-        success: false,
-        message: result.reason,
-      });
-    }
-
-    res.json({
-      success: true,
-      message: "Successfully joined room",
-      data: {
-        room: result.room,
-        player: result.player,
-      },
-    });
-  } catch (error) {
-    console.error("Error joining room:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
-
-/**
- * Leave a specific game room
- */
-const leaveRoom = async (req, res) => {
-  try {
-    const { id: roomId } = req.params;
-    const { playerId } = req.body;
-
-    if (!playerId) {
-      return res.status(400).json({
-        success: false,
-        message: "Player ID is required",
-      });
-    }
-
-    const result = await gameService.leaveSpecificRoom(playerId, roomId);
-
-    if (!result.success) {
-      return res.status(400).json({
-        success: false,
-        message: result.reason,
-      });
-    }
-
-    res.json({
-      success: true,
-      message: "Successfully left room",
-      data: result,
-    });
-  } catch (error) {
-    console.error("Error leaving room:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
-
-/**
  * Get specific room details
  */
 const getRoom = async (req, res) => {
@@ -236,62 +106,53 @@ const getRoom = async (req, res) => {
 };
 
 /**
- * Get all connected players
+ * Get room code for sharing
  */
-const getPlayers = async (req, res) => {
+const getRoomCode = async (req, res) => {
   try {
-    const players = await gameService.getAllPlayers();
-    res.json({
-      success: true,
-      message: "Players retrieved successfully",
-      data: players,
-    });
-  } catch (error) {
-    console.error("Error getting players:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
+    const { id: roomId } = req.params;
 
-/**
- * Get specific player details
- */
-const getPlayer = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const player = gameService.getPlayer(id);
+    const roomManager = require("../services/roomManagerService");
+    const room = roomManager.getRoom(roomId);
 
-    if (!player) {
+    if (!room) {
       return res.status(404).json({
         success: false,
-        message: "Player not found",
+        message: "Room not found",
+      });
+    }
+
+    const roomCode = roomManager.getCodeForRoom(roomId);
+
+    if (!roomCode) {
+      return res.status(500).json({
+        success: false,
+        message: "Room code not available",
       });
     }
 
     res.json({
       success: true,
-      message: "Player details retrieved successfully",
-      data: player.toJSON(),
+      roomCode,
+      roomId,
+      players: room.players.length,
+      maxPlayers: room.maxPlayers,
+      status: room.status,
+      gameMode: room.gameMode,
     });
   } catch (error) {
-    console.error("Error getting player:", error);
+    console.error("Error getting room code:", error);
     res.status(500).json({
       success: false,
-      message: error.message,
+      message: "Internal server error",
     });
   }
 };
 
 module.exports = {
-  getDocumentation,
   getRooms,
   createRoom,
   getStats,
-  joinRoom,
-  leaveRoom,
   getRoom,
-  getPlayers,
-  getPlayer,
+  getRoomCode,
 };

@@ -1,10 +1,49 @@
 const GameRoom = require("../models/gameRoom");
-const Player = require("../models/player");
 
 class RoomManagerService {
   constructor() {
     this.gameRooms = new Map();
     this.waitingPlayers = new Set();
+    this.roomCodes = new Map(); // Map: code -> roomId
+    this.roomToCode = new Map(); // Map: roomId -> code
+  }
+
+  /**
+   * Generate a unique 6-character room code
+   */
+  generateRoomCode() {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let code;
+    let attempts = 0;
+
+    do {
+      code = "";
+      for (let i = 0; i < 6; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      attempts++;
+    } while (this.roomCodes.has(code) && attempts < 100);
+
+    if (attempts >= 100) {
+      throw new Error("Unable to generate unique room code");
+    }
+
+    return code;
+  }
+
+  /**
+   * Get room by code
+   */
+  getRoomByCode(code) {
+    const roomId = this.roomCodes.get(code);
+    return roomId ? this.gameRooms.get(roomId) : null;
+  }
+
+  /**
+   * Get code for room
+   */
+  getCodeForRoom(roomId) {
+    return this.roomToCode.get(roomId);
   }
 
   /**
@@ -14,12 +53,21 @@ class RoomManagerService {
     const roomId = this.generateRoomId();
     const room = new GameRoom(roomId);
 
+    // Generate and assign room code
+    const roomCode = this.generateRoomCode();
+    room.code = roomCode;
+
     // Apply any custom settings
     if (roomData.settings) {
       Object.assign(room.settings, roomData.settings);
     }
 
+    // Store room and code mappings
     this.gameRooms.set(roomId, room);
+    this.roomCodes.set(roomCode, roomId);
+    this.roomToCode.set(roomId, roomCode);
+
+    console.log(`Room created: ${roomId} with code: ${roomCode}`);
     return room;
   }
 
@@ -34,6 +82,13 @@ class RoomManagerService {
    * Delete room
    */
   deleteRoom(roomId) {
+    // Clean up code mappings
+    const roomCode = this.roomToCode.get(roomId);
+    if (roomCode) {
+      this.roomCodes.delete(roomCode);
+      this.roomToCode.delete(roomId);
+    }
+
     return this.gameRooms.delete(roomId);
   }
 
@@ -137,7 +192,45 @@ class RoomManagerService {
   }
 
   /**
-   * Join specific room by ID
+   * Join specific room by code
+   */
+  async joinRoomByCode(player, roomCode) {
+    if (!player) {
+      return { success: false, reason: "Player not found" };
+    }
+
+    if (player.currentRoom) {
+      return { success: false, reason: "Player already in a room" };
+    }
+
+    const room = this.getRoomByCode(roomCode.toUpperCase());
+    if (!room) {
+      return { success: false, reason: "Invalid room code" };
+    }
+
+    if (room.players.length >= room.maxPlayers) {
+      return { success: false, reason: "Room is full" };
+    }
+
+    if (room.status !== "waiting") {
+      return { success: false, reason: "Game already in progress" };
+    }
+
+    const result = room.addPlayer(player);
+    if (!result.success) {
+      return result;
+    }
+
+    return {
+      success: true,
+      room: room.toJSON(),
+      player: player.toJSON(),
+      message: `Successfully joined room ${roomCode}`,
+    };
+  }
+
+  /**
+   * Join specific room by ID (legacy support)
    */
   async joinSpecificRoom(player, roomId) {
     if (!player) {
@@ -217,7 +310,7 @@ class RoomManagerService {
 
     player.isReady = !player.isReady;
     console.log(
-      `🔄 Player ${player.username} ready status changed to: ${player.isReady}`
+      `Player ${player.username} ready status changed to: ${player.isReady}`
     );
 
     return {

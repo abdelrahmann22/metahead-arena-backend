@@ -9,6 +9,7 @@ require("dotenv").config();
 // Import configurations
 const { connectDatabase } = require("./config/database");
 const { initializeSocket } = require("./config/socket");
+const { specs, swaggerUi } = require("./config/swagger");
 
 // Import routes
 const routes = require("./routes");
@@ -60,31 +61,26 @@ app.use(express.static("public"));
 // Make io available to routes
 app.set("io", io);
 
+// Swagger API Documentation
+app.use(
+  "/api-docs",
+  swaggerUi.serve,
+  swaggerUi.setup(specs, {
+    explorer: true,
+    customCss: ".swagger-ui .topbar { display: none }",
+    customSiteTitle: "Head Ball Game API Documentation",
+  })
+);
+
 // API Routes
 app.use("/api", routes);
 
-// Health check endpoint
-app.get("/health", (req, res) => {
-  res.status(200).json({
-    status: "healthy",
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    environment: process.env.NODE_ENV || "development",
-  });
-});
-
-// Welcome endpoint
+// Simple connection check
 app.get("/", (req, res) => {
   res.json({
-    message: "Head Ball Real-Time Game API",
-    version: "1.0.0",
-    documentation: "/api",
-    websocket: "Socket.IO enabled for real-time gameplay",
-    endpoints: {
-      health: "/health",
-      api: "/api - General API info, players, rooms, stats",
-      game: "/api/game - Real-time game management",
-    },
+    message: "Connected",
+    status: "Server is running",
+    documentation: "Visit /api-docs for API documentation",
   });
 });
 

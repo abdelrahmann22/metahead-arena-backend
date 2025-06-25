@@ -1,5 +1,4 @@
 const Player = require("../models/player");
-const User = require("../models/user");
 
 // Import the new modular services
 const userService = require("./userService");
@@ -61,6 +60,11 @@ class GameService {
   leaveRoom(socketId) {
     const player = this.getPlayer(socketId);
     return roomManagerService.leaveRoom(player);
+  }
+
+  async joinRoomByCode(playerId, roomCode) {
+    const player = this.getPlayer(playerId);
+    return await roomManagerService.joinRoomByCode(player, roomCode);
   }
 
   async joinSpecificRoom(playerId, roomId) {
@@ -196,13 +200,13 @@ class GameService {
   // Save match after game ends
   async saveMatchAfterGameEnd(room, gameResult) {
     try {
-      console.log(`💾 saveMatchAfterGameEnd called for room ${room.id}`);
-      console.log(`💾 Room matchId: ${room.matchId}`);
-      console.log(`💾 Game result:`, JSON.stringify(gameResult, null, 2));
+      console.log(`saveMatchAfterGameEnd called for room ${room.id}`);
+      console.log(`Room matchId: ${room.matchId}`);
+      console.log(`Game result:`, JSON.stringify(gameResult, null, 2));
 
       if (!room.matchId) {
         console.log(
-          `❌ No matchId found for room ${room.id}, skipping match save`
+          `No matchId found for room ${room.id}, skipping match save`
         );
         return;
       }
@@ -217,9 +221,9 @@ class GameService {
       const finalScore = gameResult.finalScore || room.gameState.score;
       const duration = 120 - room.gameState.gameTime; // Calculate duration from remaining time
 
-      console.log(`💾 Saving match ${room.matchId} after game end...`);
-      console.log(`💾 Final score:`, finalScore);
-      console.log(`💾 Duration:`, duration);
+      console.log(`Saving match ${room.matchId} after game end...`);
+      console.log(`Final score:`, finalScore);
+      console.log(`Duration:`, duration);
 
       const matchResult = await matchService.endMatch(
         room.matchId,
@@ -296,7 +300,7 @@ class GameService {
 
       // Handle game end
       if (result.type === "game-ended") {
-        console.log(`🏁 Game ended for room ${roomId}, processing...`);
+        console.log(`Game ended for room ${roomId}, processing...`);
 
         // Mark game as inactive BEFORE stopping loop
         room.gameState.isActive = false;
@@ -329,7 +333,7 @@ class GameService {
           room.status === "playing" &&
           !this.gameLoops.has(roomId)
         ) {
-          console.log(`🔄 Coordinator starting game loop for room ${roomId}`);
+          console.log(`Coordinator starting game loop for room ${roomId}`);
           this.startGameLoop(roomId);
         }
 
@@ -339,7 +343,7 @@ class GameService {
           this.gameLoops.has(roomId)
         ) {
           console.log(
-            `🔄 Coordinator stopping game loop for room ${roomId} (status: ${room.status}, active: ${room.gameState.isActive})`
+            `Coordinator stopping game loop for room ${roomId} (status: ${room.status}, active: ${room.gameState.isActive})`
           );
           this.stopGameLoop(roomId);
         }
@@ -353,7 +357,7 @@ class GameService {
       return;
     }
 
-    console.log(`🎮 Starting 60fps game loop for room ${roomId}`);
+    console.log(`Starting 60fps game loop for room ${roomId}`);
 
     let lastUpdate = Date.now();
     const targetFPS = 60;
