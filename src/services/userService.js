@@ -103,6 +103,19 @@ class UserService {
       return { success: false, error: error.message };
     }
   }
+  /**
+   * Find user by wallet address
+   */
+  async findUserById(id) {
+    try {
+      const user = await User.findById(id);
+      console.log(user);
+      return { success: true, user: user };
+    } catch (error) {
+      console.error("Error finding user by wallet:", error);
+      return { success: false, error: error.message };
+    }
+  }
 }
 
 module.exports = new UserService();

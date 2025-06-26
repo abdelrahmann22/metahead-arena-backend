@@ -99,7 +99,7 @@ const getUserProfile = async (req, res) => {
       });
     }
 
-    const result = await userService.findUserByWallet(userId);
+    const result = await userService.findUserById(userId);
 
     if (!result.success || !result.user) {
       return res.status(404).json({
