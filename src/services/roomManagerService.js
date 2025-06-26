@@ -108,23 +108,6 @@ class RoomManagerService {
   }
 
   /**
-   * Get all rooms (with pagination)
-   */
-  async getAvailableRooms({ page = 1, limit = 10, gameMode }) {
-    const rooms = Array.from(this.gameRooms.values())
-      .filter((room) => room.status === "waiting" && !room.isFull())
-      .slice((page - 1) * limit, page * limit)
-      .map((room) => room.toJSON());
-
-    return {
-      rooms,
-      total: Array.from(this.gameRooms.values()).filter(
-        (room) => room.status === "waiting"
-      ).length,
-    };
-  }
-
-  /**
    * Get all rooms for admin
    */
   async getAllRooms() {

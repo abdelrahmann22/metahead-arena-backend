@@ -3,108 +3,12 @@ const router = express.Router();
 const gameController = require("../controllers/gameController");
 
 /**
- * @fileoverview Game Room Management Routes
- * @description RESTful API routes for real-time game room operations and statistics
+ * @fileoverview Game Management Routes
+ * @description Essential HTTP API routes for game monitoring and room code sharing
  * @module routes/game
+ *
+ * Note: Most game operations (create room, join room, gameplay) are handled via Socket.IO
  */
-
-/**
- * @swagger
- * /api/game/rooms:
- *   get:
- *     summary: Get all game rooms
- *     tags: [Game Rooms]
- *     responses:
- *       200:
- *         description: List of all game rooms
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 $ref: '#/components/schemas/GameRoom'
- */
-/**
- * GET /api/game/rooms
- * Retrieve all active game rooms for matchmaking
- */
-router.get("/rooms", gameController.getRooms);
-
-/**
- * @swagger
- * /api/game/rooms/{id}:
- *   get:
- *     summary: Get a specific game room
- *     tags: [Game Rooms]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: Room ID
- *     responses:
- *       200:
- *         description: Game room details
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/GameRoom'
- *       404:
- *         description: Room not found
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
-/**
- * GET /api/game/rooms/:id
- * Retrieve specific game room details by room ID
- */
-router.get("/rooms/:id", gameController.getRoom);
-
-/**
- * @swagger
- * /api/game/rooms/create:
- *   post:
- *     summary: Create a new game room
- *     tags: [Game Rooms]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               name:
- *                 type: string
- *                 description: Room name
- *               maxPlayers:
- *                 type: number
- *                 default: 2
- *                 description: Maximum players allowed
- *               userId:
- *                 type: string
- *                 description: Creator user ID
- *     responses:
- *       201:
- *         description: Room created successfully
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/GameRoom'
- *       400:
- *         description: Bad request
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
-/**
- * POST /api/game/rooms/create
- * Create a new game room for 1v1 matches
- */
-router.post("/rooms/create", gameController.createRoom);
 
 /**
  * @swagger
@@ -112,7 +16,7 @@ router.post("/rooms/create", gameController.createRoom);
  *   get:
  *     summary: Get room code for sharing
  *     description: Returns the shareable room code that players can use to join this room
- *     tags: [Game Rooms]
+ *     tags: [Game]
  *     parameters:
  *       - in: path
  *         name: id
@@ -176,28 +80,52 @@ router.get("/rooms/:id/code", gameController.getRoomCode);
  * @swagger
  * /api/game/stats:
  *   get:
- *     summary: Get game statistics
+ *     summary: Get live game statistics
+ *     description: Retrieve current server statistics including player counts and active rooms
  *     tags: [Game]
  *     responses:
  *       200:
- *         description: Game statistics
+ *         description: Game statistics retrieved successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 totalRooms:
- *                   type: number
- *                   description: Total number of rooms
- *                 activeRooms:
- *                   type: number
- *                   description: Number of active rooms
- *                 totalPlayers:
- *                   type: number
- *                   description: Total number of online players
- *                 playingPlayers:
- *                   type: number
- *                   description: Number of players currently in game
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Live game statistics retrieved successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     totalPlayers:
+ *                       type: number
+ *                       description: Total number of online players
+ *                       example: 25
+ *                     activeRooms:
+ *                       type: number
+ *                       description: Number of active game rooms
+ *                       example: 8
+ *                     playersInQueue:
+ *                       type: number
+ *                       description: Players waiting for matches
+ *                       example: 3
+ *                     serverUptime:
+ *                       type: number
+ *                       description: Server uptime in seconds
+ *                       example: 86400
+ *                     timestamp:
+ *                       type: number
+ *                       description: Current timestamp
+ *                       example: 1640995200000
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 /**
  * GET /api/game/stats

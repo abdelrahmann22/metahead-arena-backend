@@ -42,10 +42,6 @@ class GameService {
     return roomManagerService.getRoom(roomId);
   }
 
-  async getAvailableRooms(options) {
-    return await roomManagerService.getAvailableRooms(options);
-  }
-
   findMatch(socketId) {
     const player = this.getPlayer(socketId);
     return roomManagerService.findMatch(player);

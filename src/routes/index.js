@@ -23,7 +23,7 @@ router.get("/", (req, res) => {
     architecture: "MCS (Model-Controller-Service)",
     endpoints: {
       "/": "API documentation and overview",
-      "/game": "Game management (rooms, stats)",
+      "/game": "Game statistics and room code sharing",
       "/users": "User management (Web3 authentication, profiles)",
       "/matches": "Match management (create, start, end, history)",
       "/chests": "Chest management (user chests, rewards)",
