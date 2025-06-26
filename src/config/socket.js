@@ -469,6 +469,73 @@ const handlePlayerInput = (socket, io, data) => {
 };
 
 /**
+ * Handle ball state synchronization from the ball authority
+ * @param {Socket} socket - Socket.IO socket instance
+ * @param {Server} io - Socket.IO server instance
+ * @param {Object} data - Ball state data
+ */
+const handleBallState = (socket, io, data) => {
+  try {
+    const player = gameService.getPlayer(socket.id);
+    if (!player || !player.currentRoom) {
+      return;
+    }
+
+    const room = gameService.getRoom(player.currentRoom);
+    if (!room || !room.gameState.isActive) {
+      return;
+    }
+
+    // Only player1 should be sending ball state (ball authority)
+    if (player.position !== "player1") {
+      return;
+    }
+
+    // Relay ball state to other players in the room
+    socket.to(room.id).emit("ball-state", {
+      ball: data.ball,
+      timestamp: data.timestamp,
+    });
+  } catch (error) {
+    console.error("Error in handleBallState:", error);
+  }
+};
+
+/**
+ * Handle player position synchronization
+ * @param {Socket} socket - Socket.IO socket instance
+ * @param {Server} io - Socket.IO server instance
+ * @param {Object} data - Player position data
+ */
+const handlePlayerPosition = (socket, io, data) => {
+  try {
+    const player = gameService.getPlayer(socket.id);
+    if (!player || !player.currentRoom) {
+      return;
+    }
+
+    const room = gameService.getRoom(player.currentRoom);
+    if (!room || !room.gameState.isActive) {
+      return;
+    }
+
+    // Validate that player is sending their own position
+    if (player.position !== data.position) {
+      return;
+    }
+
+    // Relay player position to other players in the room
+    socket.to(room.id).emit("player-position", {
+      position: data.position,
+      player: data.player,
+      timestamp: data.timestamp,
+    });
+  } catch (error) {
+    console.error("Error in handlePlayerPosition:", error);
+  }
+};
+
+/**
  * Handle player leaving room
  * @param {Socket} socket - Socket.IO socket instance
  * @param {Server} io - Socket.IO server instance
@@ -658,6 +725,16 @@ function initializeSocket(server) {
 
     socket.on("player-input", (data) => {
       handlePlayerInput(socket, io, data);
+    });
+
+    // === Ball State Synchronization ===
+    socket.on("ball-state", (data) => {
+      handleBallState(socket, io, data);
+    });
+
+    // === Player Position Synchronization ===
+    socket.on("player-position", (data) => {
+      handlePlayerPosition(socket, io, data);
     });
 
     // === Connection Management ===

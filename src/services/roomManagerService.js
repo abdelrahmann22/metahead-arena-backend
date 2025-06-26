@@ -415,7 +415,7 @@ class RoomManagerService {
     room.startedAt = new Date();
     room.gameState.isActive = true;
     room.gameState.score = { player1: 0, player2: 0 };
-    room.gameState.gameTime = 30; // 30 seconds game duration
+    room.gameState.gameTime = 60; // 60 seconds game duration
 
     console.log(`Game started in room ${roomId}`);
     return {

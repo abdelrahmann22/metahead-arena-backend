@@ -326,7 +326,7 @@ class GameService {
       reason: "time-up",
       finalScore: finalScore,
       winner: winner,
-      duration: 30, // Match duration
+      duration: 60, // Match duration
       timestamp: Date.now(),
     };
 

@@ -21,8 +21,8 @@ class GameRoom {
       // Score tracking
       score: { player1: 0, player2: 0 },
 
-      // Time management (30-second matches)
-      gameTime: 30, // seconds remaining (countdown)
+      // Time management (60-second matches)
+      gameTime: 60, // seconds remaining (countdown)
       isActive: false,
       isPaused: false,
 
@@ -35,7 +35,7 @@ class GameRoom {
     this.settings = {
       // Game rules
       rules: {
-        matchDuration: 30, // 30 seconds
+        matchDuration: 60, // 60 seconds
         allowTies: true, // Matches can end in draws
         maxGoals: null, // No goal limit (time-based only)
       },
@@ -139,7 +139,7 @@ class GameRoom {
     // Reset game state for rematch
     this.status = "waiting";
     this.gameState.score = { player1: 0, player2: 0 };
-    this.gameState.gameTime = 30;
+    this.gameState.gameTime = 60;
     this.gameState.isActive = false;
     this.gameState.isPaused = false;
     this.gameState.lastGoal = null;

@@ -24,11 +24,12 @@ class SocketEventDemo {
     this.isReady = false;
     this.playersInRoom = [];
     this.playerPosition = null; // "player1" or "player2"
+    this.isBallAuthority = false; // Whether this player is responsible for ball physics
 
     // Game State
     this.gameActive = false;
     this.score = { player1: 0, player2: 0 };
-    this.gameTime = 30;
+    this.gameTime = 60;
     this.matchId = null;
 
     // Physics State (Frontend-managed)
@@ -220,6 +221,16 @@ class SocketEventDemo {
       );
     });
 
+    // === Ball Synchronization Events ===
+    this.socket.on("ball-state", (data) => {
+      this.handleBallStateUpdate(data);
+    });
+
+    // === Player Position Synchronization Events ===
+    this.socket.on("player-position", (data) => {
+      this.handlePlayerPositionUpdate(data);
+    });
+
     // === Rematch Events ===
     this.socket.on("rematch-request", (data) => {
       this.handleRematchRequest(data);
@@ -260,7 +271,14 @@ class SocketEventDemo {
     const thisPlayer = this.playersInRoom.find((p) => p.id === this.playerId);
     if (thisPlayer) {
       this.playerPosition = thisPlayer.position;
+      this.isBallAuthority = this.playerPosition === "player1"; // Player 1 is ball authority
       this.logEvent("info", `You are ${this.playerPosition}`);
+      if (this.isBallAuthority) {
+        this.logEvent(
+          "info",
+          "You are the ball authority - managing ball physics"
+        );
+      }
     }
 
     this.showGameOverlay("Room Joined", "Ready up when you're ready to play!");
@@ -273,6 +291,7 @@ class SocketEventDemo {
     this.isReady = false;
     this.playersInRoom = [];
     this.playerPosition = null;
+    this.isBallAuthority = false; // Reset ball authority
 
     this.updateRoomInfo();
     this.updateReadyStatus();
@@ -295,8 +314,12 @@ class SocketEventDemo {
 
   handleGameStarted(data) {
     this.gameActive = true;
-    this.gameTime = data.matchDuration || 30;
+    this.gameTime = data.matchDuration || 60;
     this.matchId = data.room.matchId;
+
+    // Reset broadcast counters for fresh synchronization
+    this.ballBroadcastCounter = 0;
+    this.playerBroadcastCounter = 0;
 
     this.setGameMode(true);
     this.hideGameOverlay();
@@ -350,39 +373,54 @@ class SocketEventDemo {
   }
 
   handleRemotePlayerInput(data) {
-    if (data.playerId === this.playerId) return; // Ignore own input
+    // This method is no longer used for physics - kept for compatibility
+    // Position synchronization now happens through handlePlayerPositionUpdate()
+    return;
+  }
 
-    const position = data.position || this.getPlayerPosition(data.playerId);
-    if (!position || !this.players[position]) return;
-
-    const player = this.players[position];
-
-    switch (data.action) {
-      case "move-left":
-        if (data.input.pressed) {
-          player.velocityX = -this.physics.playerSpeed;
-          player.direction = "left";
-        } else {
-          player.velocityX *= this.physics.friction;
-          player.direction = "idle";
-        }
-        break;
-      case "move-right":
-        if (data.input.pressed) {
-          player.velocityX = this.physics.playerSpeed;
-          player.direction = "right";
-        } else {
-          player.velocityX *= this.physics.friction;
-          player.direction = "idle";
-        }
-        break;
-      case "jump":
-        if (data.input.pressed && player.isOnGround) {
-          player.velocityY = -this.physics.jumpPower;
-          player.isOnGround = false;
-        }
-        break;
+  handlePlayerPositionUpdate(data) {
+    // Only update remote player positions, not our own
+    if (
+      !data.position ||
+      data.position === this.playerPosition ||
+      !this.gameActive
+    ) {
+      return;
     }
+
+    const remotePlayer = this.players[data.position];
+    if (!remotePlayer) return;
+
+    // Apply received position with interpolation to smooth network jitter
+    const lerpFactor = 0.7; // How much to trust the received state vs current state
+
+    remotePlayer.x =
+      remotePlayer.x * (1 - lerpFactor) + data.player.x * lerpFactor;
+    remotePlayer.y =
+      remotePlayer.y * (1 - lerpFactor) + data.player.y * lerpFactor;
+    remotePlayer.velocityX =
+      remotePlayer.velocityX * (1 - lerpFactor) +
+      data.player.velocityX * lerpFactor;
+    remotePlayer.velocityY =
+      remotePlayer.velocityY * (1 - lerpFactor) +
+      data.player.velocityY * lerpFactor;
+    remotePlayer.direction = data.player.direction;
+    remotePlayer.isOnGround = data.player.isOnGround;
+  }
+
+  handleBallStateUpdate(data) {
+    // Only non-authority players should receive and apply ball state updates
+    if (this.isBallAuthority || !this.gameActive) return;
+
+    // Apply received ball state with some interpolation to smooth out network jitter
+    const lerpFactor = 0.8; // How much to trust the received state vs current state
+
+    this.ball.x = this.ball.x * (1 - lerpFactor) + data.ball.x * lerpFactor;
+    this.ball.y = this.ball.y * (1 - lerpFactor) + data.ball.y * lerpFactor;
+    this.ball.velocityX =
+      this.ball.velocityX * (1 - lerpFactor) + data.ball.velocityX * lerpFactor;
+    this.ball.velocityY =
+      this.ball.velocityY * (1 - lerpFactor) + data.ball.velocityY * lerpFactor;
   }
 
   // ============ FRONTEND PHYSICS ENGINE ============
@@ -391,7 +429,12 @@ class SocketEventDemo {
     this.gameLoop = setInterval(() => {
       if (this.gameActive) {
         this.updatePhysics();
-        this.checkCollisions();
+
+        // Only ball authority handles collisions to avoid conflicts
+        if (this.isBallAuthority) {
+          this.checkCollisions();
+        }
+
         this.updateTimer();
       }
       this.renderGame();
@@ -399,9 +442,17 @@ class SocketEventDemo {
   }
 
   updatePhysics() {
-    this.updatePlayerPhysics("player1");
-    this.updatePlayerPhysics("player2");
-    this.updateBallPhysics();
+    // Each player only updates their own physics
+    if (this.playerPosition) {
+      this.updatePlayerPhysics(this.playerPosition);
+      this.broadcastPlayerPosition();
+    }
+
+    // Only the ball authority updates ball physics
+    if (this.isBallAuthority) {
+      this.updateBallPhysics();
+      this.broadcastBallState();
+    }
   }
 
   updatePlayerPhysics(playerKey) {
@@ -412,18 +463,16 @@ class SocketEventDemo {
       player.velocityY += this.physics.gravity;
     }
 
-    // Apply movement (only for local player)
-    if (playerKey === this.playerPosition) {
-      if (this.input.left) {
-        player.velocityX = -this.physics.playerSpeed;
-        player.direction = "left";
-      } else if (this.input.right) {
-        player.velocityX = this.physics.playerSpeed;
-        player.direction = "right";
-      } else {
-        player.velocityX *= this.physics.friction;
-        player.direction = "idle";
-      }
+    // Apply movement input
+    if (this.input.left) {
+      player.velocityX = -this.physics.playerSpeed;
+      player.direction = "left";
+    } else if (this.input.right) {
+      player.velocityX = this.physics.playerSpeed;
+      player.direction = "right";
+    } else {
+      player.velocityX *= this.physics.friction;
+      player.direction = "idle";
     }
 
     // Apply air resistance
@@ -563,7 +612,7 @@ class SocketEventDemo {
 
     this.socket.emit("game-end", {
       finalScore: this.score,
-      duration: 30 - this.gameTime,
+      duration: 60 - this.gameTime,
       winner: winner,
     });
 
@@ -672,6 +721,67 @@ class SocketEventDemo {
     if (this.socket && this.isConnected) {
       this.socket.emit(action, data);
     }
+  }
+
+  broadcastBallState() {
+    // Only broadcast if we're the ball authority and connected
+    if (
+      !this.isBallAuthority ||
+      !this.socket ||
+      !this.isConnected ||
+      !this.gameActive
+    ) {
+      return;
+    }
+
+    // Throttle ball state broadcasts to avoid spam (every 2nd frame)
+    if (!this.ballBroadcastCounter) this.ballBroadcastCounter = 0;
+    this.ballBroadcastCounter++;
+
+    if (this.ballBroadcastCounter % 2 !== 0) return;
+
+    this.socket.emit("ball-state", {
+      ball: {
+        x: this.ball.x,
+        y: this.ball.y,
+        velocityX: this.ball.velocityX,
+        velocityY: this.ball.velocityY,
+      },
+      timestamp: Date.now(),
+    });
+  }
+
+  broadcastPlayerPosition() {
+    // Only broadcast if we have a position and are connected
+    if (
+      !this.playerPosition ||
+      !this.socket ||
+      !this.isConnected ||
+      !this.gameActive
+    ) {
+      return;
+    }
+
+    // Throttle player position broadcasts to avoid spam (every 3rd frame)
+    if (!this.playerBroadcastCounter) this.playerBroadcastCounter = 0;
+    this.playerBroadcastCounter++;
+
+    if (this.playerBroadcastCounter % 3 !== 0) return;
+
+    const player = this.players[this.playerPosition];
+
+    this.socket.emit("player-position", {
+      position: this.playerPosition,
+      player: {
+        x: player.x,
+        y: player.y,
+        velocityX: player.velocityX,
+        velocityY: player.velocityY,
+        direction: player.direction,
+        isOnGround: player.isOnGround,
+      },
+      timestamp: Date.now(),
+    });
   }
 
   // ============ UI EVENT HANDLERS ============
@@ -1050,8 +1160,13 @@ class SocketEventDemo {
     this.gameActive = false;
     this.isReady = false;
     this.score = { player1: 0, player2: 0 };
-    this.gameTime = 30;
+    this.gameTime = 60;
     this.matchId = null;
+    this.isBallAuthority = false; // Reset ball authority
+
+    // Reset broadcast counters
+    this.ballBroadcastCounter = 0;
+    this.playerBroadcastCounter = 0;
 
     this.resetPositions();
     this.updateScoreDisplay();
