@@ -29,11 +29,7 @@ const matchSchema = new mongoose.Schema(
           ref: "User",
           required: true,
         },
-        nft: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "NFT",
-          default: null, // Null if no NFT equipped
-        },
+
         position: {
           type: String,
           enum: ["player1", "player2"],

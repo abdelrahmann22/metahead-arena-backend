@@ -1,7 +1,6 @@
 const express = require("express");
 const gameRoutes = require("./game");
 const userRoutes = require("./user");
-const nftRoutes = require("./nft");
 const matchRoutes = require("./match");
 const chestRoutes = require("./chest");
 
@@ -26,7 +25,6 @@ router.get("/", (req, res) => {
       "/": "API documentation and overview",
       "/game": "Game management (rooms, stats)",
       "/users": "User management (Web3 authentication, profiles)",
-      "/nfts": "NFT management (collection, power modifiers)",
       "/matches": "Match management (create, start, end, history)",
       "/chests": "Chest management (user chests, rewards)",
     },
@@ -34,7 +32,6 @@ router.get("/", (req, res) => {
     features: [
       "Real-time 1v1 matchmaking",
       "Web3 wallet authentication",
-      "NFT-powered gameplay modifiers",
       "Match history and statistics",
       "WebSocket-based 60fps gameplay",
       "MongoDB user persistence",
@@ -46,7 +43,6 @@ router.get("/", (req, res) => {
 // Mount API route modules
 router.use("/game", gameRoutes);
 router.use("/users", userRoutes);
-router.use("/nfts", nftRoutes);
 router.use("/matches", matchRoutes);
 router.use("/chests", chestRoutes);
 

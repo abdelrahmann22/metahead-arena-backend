@@ -115,8 +115,6 @@ router.get("/user/:userId/history", matchController.getUserMatchHistory);
  *                           type: number
  *                         position:
  *                           type: string
- *                         nft:
- *                           type: object
  *                     opponentStats:
  *                       type: object
  *                       properties:
@@ -124,8 +122,6 @@ router.get("/user/:userId/history", matchController.getUserMatchHistory);
  *                           type: number
  *                         position:
  *                           type: string
- *                         nft:
- *                           type: object
  *                         username:
  *                           type: string
  *       404:

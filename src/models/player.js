@@ -7,7 +7,7 @@
  *
  * Features: Session management, room assignment, ready state tracking
  *
- * Note: For persistent user data (stats, NFTs, matches), use User model
+ * Note: For persistent user data (stats, matches), use User model
  */
 class Player {
   /**
@@ -30,13 +30,6 @@ class Player {
       position: { x: 0, y: 0 },
       score: 0,
       powerups: [],
-    };
-
-    // NFT modifiers for gameplay (applied when NFT is equipped)
-    this.nftModifiers = {
-      speedMultiplier: 1.0,
-      jumpMultiplier: 1.0,
-      superkickMultiplier: 1.0,
     };
   }
 
@@ -67,7 +60,6 @@ class Player {
       currentRoom: this.currentRoom,
       position: this.position, // Include position in JSON output
       joinedAt: this.joinedAt.toISOString(),
-      nftModifiers: this.nftModifiers,
     };
   }
 }

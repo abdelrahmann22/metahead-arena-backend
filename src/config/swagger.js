@@ -42,13 +42,6 @@ const options = {
               description: "Web3 wallet address",
               example: "0x742d35Cc6634C0532925a3b8D",
             },
-            nfts: {
-              type: "array",
-              items: {
-                $ref: "#/components/schemas/NFT",
-              },
-              description: "User's NFT collection",
-            },
             gameStats: {
               type: "object",
               properties: {

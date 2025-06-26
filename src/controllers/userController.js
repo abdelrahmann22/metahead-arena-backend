@@ -119,8 +119,6 @@ const getUserProfile = async (req, res) => {
         draws: result.user.gameStats.draws,
         totalMatches: result.user.gameStats.totalMatches,
       },
-      nfts: result.user.nfts,
-      equippedNFT: result.user.equippedNFT,
     };
 
     res.json({

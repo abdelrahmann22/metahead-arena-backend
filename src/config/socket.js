@@ -3,7 +3,6 @@ const gameService = require("../services/gameService");
 const matchService = require("../services/matchService");
 const gameBroadcaster = require("../services/gameBroadcaster");
 const userService = require("../services/userService");
-const nftService = require("../services/nftService");
 
 /**
  * @fileoverview WebSocket Configuration and Event Handlers
@@ -17,7 +16,7 @@ const nftService = require("../services/nftService");
  * Handle player joining the game
  * @param {Socket} socket - Socket.IO socket instance
  * @param {Server} io - Socket.IO server instance
- * @param {Object} data - Player join data containing walletAddress and optional nftId
+ * @param {Object} data - Player join data containing walletAddress
  */
 const handlePlayerJoin = async (socket, io, data) => {
   try {
@@ -44,19 +43,6 @@ const handlePlayerJoin = async (socket, io, data) => {
 
     const user = userResult.user;
 
-    // Get NFT modifiers if player specifies an NFT
-    let nftModifiers = {
-      speedMultiplier: 1.0,
-      jumpMultiplier: 1.0,
-      superkickMultiplier: 1.0,
-    };
-    if (data.nftId) {
-      const nftResult = await nftService.getNFTById(data.nftId);
-      if (nftResult.success) {
-        nftModifiers = nftService.getGameModifiers(nftResult.nft);
-      }
-    }
-
     // Create player or get existing
     let result = gameService.createPlayer(
       socket.id,
@@ -71,12 +57,9 @@ const handlePlayerJoin = async (socket, io, data) => {
     }
 
     if (result.success) {
-      result.player.nftModifiers = nftModifiers;
-
       socket.emit("player-created", {
         player: result.player.toJSON(),
         user: { walletAddress: user.walletAddress },
-        nftModifiers: nftModifiers,
       });
 
       socket.emit("game-status", gameService.getGameStats());

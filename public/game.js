@@ -845,7 +845,6 @@ class SocketEventDemo {
 
     this.socket.emit("join-game", {
       walletAddress: this.walletAddress,
-      nftId: null, // Could be extended for NFT selection
     });
 
     this.logEvent("socket", "Joining game...");

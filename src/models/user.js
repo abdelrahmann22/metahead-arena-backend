@@ -7,7 +7,7 @@ const mongoose = require("mongoose");
  * Scope: MongoDB database, permanent storage
  * Lifespan: Permanent user accounts
  *
- * Features: Web3 wallet integration, NFT ownership, match history,
+ * Features: Web3 wallet integration, match history,
  *          game statistics, chest rewards
  *
  * Note: For temporary session data (Socket.IO), use Player model
@@ -23,14 +23,6 @@ const userSchema = new mongoose.Schema(
       trim: true,
       match: /^0x[a-fA-F0-9]{40}$/, // Ethereum address format
     },
-
-    // NFT Collection (References)
-    nfts: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "NFT",
-      },
-    ],
 
     // Enhanced Game Statistics
     gameStats: {

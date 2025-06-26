@@ -22,13 +22,11 @@ class MatchService {
         players: [
           {
             user: player1Data.userId,
-            nft: player1Data.nftId || null,
             position: "player1",
             goals: 0,
           },
           {
             user: player2Data.userId,
-            nft: player2Data.nftId || null,
             position: "player2",
             goals: 0,
           },
@@ -154,7 +152,6 @@ class MatchService {
     try {
       const match = await Match.findById(matchId)
         .populate("players.user", "walletAddress")
-        .populate("players.nft", "name power")
         .populate("result.winner", "walletAddress");
 
       if (!match) {
@@ -177,7 +174,6 @@ class MatchService {
 
       const matches = await Match.find({ "players.user": userId })
         .populate("players.user", "walletAddress")
-        .populate("players.nft", "name power")
         .populate("result.winner", "walletAddress")
         .sort({ startedAt: -1 })
         .skip(skip)
@@ -213,7 +209,6 @@ class MatchService {
         "players.user": userId,
       })
         .populate("players.user", "walletAddress")
-        .populate("players.nft", "name power")
         .populate("result.winner", "walletAddress");
 
       if (!match) {
@@ -250,12 +245,10 @@ class MatchService {
         userStats: {
           goals: userPlayer ? userPlayer.goals : 0,
           position: userPlayer ? userPlayer.position : null,
-          nft: userPlayer ? userPlayer.nft : null,
         },
         opponentStats: {
           goals: opponentPlayer ? opponentPlayer.goals : 0,
           position: opponentPlayer ? opponentPlayer.position : null,
-          nft: opponentPlayer ? opponentPlayer.nft : null,
           walletAddress: opponentPlayer
             ? opponentPlayer.user.walletAddress
             : "Unknown",
