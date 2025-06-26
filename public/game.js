@@ -1,422 +1,707 @@
 /**
- * MetaHead Arena - Head Ball Game Client
- * Modern Socket.IO client with real-time gameplay
+ * MetaHead Arena - Complete Socket Events Demo
+ * Comprehensive testing interface for all backend socket events
  */
 
-class HeadBallClient {
+class SocketEventDemo {
   constructor() {
+    // Connection State
     this.socket = null;
     this.isConnected = false;
     this.playerId = null;
-    this.roomId = null;
-    this.isReady = false;
-    this.gameActive = false;
+    this.serverTime = null;
 
-    // Movement states
-    this.isMovingLeft = false;
-    this.isMovingRight = false;
+    // Player State
+    this.walletAddress = null;
+    this.username = "Anonymous";
+    this.isInGame = false;
+
+    // Room State
+    this.roomId = null;
+    this.roomCode = null;
+    this.roomType = null;
+    this.gameMode = "1v1";
+    this.isReady = false;
+    this.playersInRoom = [];
+    this.playerPosition = null; // "player1" or "player2"
+
+    // Game State
+    this.gameActive = false;
+    this.score = { player1: 0, player2: 0 };
+    this.gameTime = 30;
+    this.matchId = null;
+
+    // Physics State (Frontend-managed)
+    this.players = {
+      player1: {
+        x: 150,
+        y: 320,
+        velocityX: 0,
+        velocityY: 0,
+        isOnGround: true,
+        direction: "idle",
+      },
+      player2: {
+        x: 650,
+        y: 320,
+        velocityX: 0,
+        velocityY: 0,
+        isOnGround: true,
+        direction: "idle",
+      },
+    };
+    this.ball = { x: 400, y: 300, velocityX: 0, velocityY: 0 };
+
+    // Input State
+    this.input = { left: false, right: false };
     this.keys = {};
 
-    // Game state
-    this.gameState = null;
-    this.lastUpdate = Date.now();
+    // Physics Constants
+    this.physics = {
+      gravity: 0.5,
+      friction: 0.88,
+      airResistance: 0.99,
+      ballBounce: 0.75,
+      playerSpeed: 4,
+      jumpPower: 12,
+      groundLevel: 320,
+    };
 
-    // Initialize the client
+    // Event Monitoring
+    this.autoScroll = true;
+    this.eventCount = 0;
+
+    // Game Loop
+    this.gameLoop = null;
+
+    // Match History
+    this.matchHistory = [];
+
+    // Rematch State
+    this.rematchRequested = false;
+    this.rematchState = null;
+
     this.init();
   }
 
-  /**
-   * Initialize the client
-   */
   init() {
     this.connectSocket();
     this.setupEventListeners();
     this.setupKeyboardControls();
-    this.log("MetaHead Arena - Head Ball Client initialized");
-    this.log(
-      "Keyboard Controls: WASD / Arrow Keys to move, Space to jump, S to kick"
+    this.startGameLoop();
+    this.logEvent("info", "Complete Socket Events Demo initialized");
+    this.logEvent(
+      "info",
+      "Open multiple browser tabs to test multiplayer functionality"
     );
   }
 
-  /**
-   * Connect to Socket.IO server
-   */
+  // ============ SOCKET CONNECTION & EVENT HANDLERS ============
+
   connectSocket() {
-    try {
-      this.socket = io();
+    this.socket = io();
 
-      this.socket.on("connect", () => {
-        this.handleConnection();
-      });
+    // === Connection Events ===
+    this.socket.on("connect", () => {
+      this.isConnected = true;
+      this.updateConnectionStatus("Connected", true);
+      this.logEvent(
+        "success",
+        `Connected to server with socket ID: ${this.socket.id}`
+      );
+      this.enableButton("joinGameBtn");
+    });
 
-      this.socket.on("disconnect", () => {
-        this.handleDisconnection();
-      });
+    this.socket.on("disconnect", (reason) => {
+      this.isConnected = false;
+      this.updateConnectionStatus("Disconnected", false);
+      this.logEvent("error", `Disconnected from server: ${reason}`);
+      this.resetGameState();
+    });
 
-      this.socket.on("welcome", (data) => {
-        this.handleWelcome(data);
-      });
+    this.socket.on("welcome", (data) => {
+      this.playerId = data.playerId;
+      this.serverTime = new Date(data.serverTime);
+      this.updatePlayerInfo("playerId", data.playerId);
+      this.updatePlayerInfo("serverTime", this.formatTime(this.serverTime));
+      this.logEvent("socket", `Welcome message received`, data);
+    });
 
-      this.socket.on("player-created", (data) => {
-        this.handlePlayerCreated(data);
-      });
+    // === Player Events ===
+    this.socket.on("player-created", (data) => {
+      this.logEvent("success", `Player created: ${data.player.username}`, data);
+      if (data.user) {
+        this.updatePlayerInfo(
+          "username",
+          data.user.walletAddress.slice(0, 6) + "..."
+        );
+      }
+    });
 
-      this.socket.on("room-joined", (data) => {
-        this.handleRoomJoined(data);
-      });
+    this.socket.on("game-status", (data) => {
+      this.logEvent("info", "Game status updated", data);
+      this.updateStats(data);
+    });
 
-      this.socket.on("room-full", (data) => {
-        this.handleRoomFull(data);
-      });
+    // === Room Events ===
+    this.socket.on("room-created", (data) => {
+      this.handleRoomJoined(data);
+      this.logEvent("success", `Room created: ${data.roomCode}`, data);
+    });
 
-      this.socket.on("player-ready-changed", (data) => {
-        this.handlePlayerReadyChanged(data);
-      });
+    this.socket.on("room-joined", (data) => {
+      this.handleRoomJoined(data);
+      this.logEvent("success", `Joined room: ${data.roomCode}`, data);
+    });
 
-      this.socket.on("game-started", (data) => {
-        this.handleGameStarted(data);
-      });
+    this.socket.on("player-joined-room", (data) => {
+      this.updatePlayersInRoom();
+      this.logEvent(
+        "info",
+        `Player joined room: ${data.player.username}`,
+        data
+      );
+      this.showGameOverlay(
+        "Player Joined",
+        `${data.player.username} joined the room`
+      );
+    });
 
-      this.socket.on("game-state-update", (data) => {
-        this.handleGameStateUpdate(data);
-      });
+    this.socket.on("room-full", (data) => {
+      this.logEvent("warning", "Room is full - ready up to start!", data);
+      this.showGameOverlay("Room Full", "Ready up to start the match!");
+    });
 
-      this.socket.on("goal-scored", (data) => {
-        this.handleGoalScored(data);
-      });
+    this.socket.on("left-room", (data) => {
+      this.handleRoomLeft();
+      this.logEvent("info", `Left room: ${data.roomId}`, data);
+    });
 
-      this.socket.on("game-ended", (data) => {
-        this.handleGameEnded(data);
-      });
+    this.socket.on("player-left", (data) => {
+      this.updatePlayersInRoom();
+      this.logEvent("warning", `Player left: ${data.username}`, data);
+      this.showGameOverlay("Player Left", `${data.username} left the room`);
+    });
 
-      this.socket.on("error", (data) => {
-        this.handleError(data);
-      });
+    // === Game Events ===
+    this.socket.on("player-ready", (data) => {
+      this.handlePlayerReady(data);
+      this.logEvent(
+        "info",
+        `Player ready: ${data.username} (${
+          data.isReady ? "ready" : "not ready"
+        })`,
+        data
+      );
+    });
 
-      this.socket.on("connect_error", (error) => {
-        this.log(`Connection error: ${error.message}`, "error");
-        this.updateConnectionStatus("Connection Error", false);
-      });
-    } catch (error) {
-      this.log(`Socket initialization error: ${error.message}`, "error");
-    }
+    this.socket.on("game-started", (data) => {
+      this.handleGameStarted(data);
+      this.logEvent("success", "Game started!", data);
+    });
+
+    this.socket.on("match-ended", (data) => {
+      this.handleMatchEnded(data);
+      this.logEvent("success", `Match ended - Winner: ${data.winner}`, data);
+    });
+
+    this.socket.on("goal-scored", (data) => {
+      this.handleGoalScored(data);
+      this.logEvent("success", `Goal scored by ${data.scorer}!`, data);
+    });
+
+    // === Input Events ===
+    this.socket.on("player-input", (data) => {
+      this.handleRemotePlayerInput(data);
+      this.logEvent(
+        "socket",
+        `Input from ${data.username}: ${data.action}`,
+        data
+      );
+    });
+
+    // === Rematch Events ===
+    this.socket.on("rematch-request", (data) => {
+      this.handleRematchRequest(data);
+      this.logEvent("info", "Rematch requested", data);
+    });
+
+    this.socket.on("rematch-confirmed", (data) => {
+      this.handleRematchConfirmed(data);
+      this.logEvent("success", "Rematch confirmed - starting new game!", data);
+    });
+
+    this.socket.on("rematch-declined", (data) => {
+      this.handleRematchDeclined(data);
+      this.logEvent("warning", "Rematch declined", data);
+    });
+
+    // === Error Events ===
+    this.socket.on("error", (data) => {
+      this.logEvent("error", data.message, data);
+      this.showToast(data.message, "error");
+    });
   }
 
-  /**
-   * Handle successful connection
-   */
-  handleConnection() {
-    this.isConnected = true;
-    this.updateConnectionStatus("Connected", true);
-    this.log("Connected to MetaHead Arena server!", "success");
+  // ============ EVENT HANDLERS ============
 
-    // Enable join game button
-    const joinBtn = document.getElementById("joinGameBtn");
-    if (joinBtn) {
-      joinBtn.disabled = false;
-    }
-  }
-
-  /**
-   * Handle disconnection
-   */
-  handleDisconnection() {
-    this.isConnected = false;
-    this.updateConnectionStatus("Disconnected", false);
-    this.log("Disconnected from server", "error");
-
-    // Reset all states
-    this.resetGameState();
-  }
-
-  /**
-   * Handle welcome message
-   */
-  handleWelcome(data) {
-    this.playerId = data.playerId;
-    this.updatePlayerInfo("playerId", data.playerId);
-    this.log(`${data.message}`, "info");
-  }
-
-  /**
-   * Handle player creation
-   */
-  handlePlayerCreated(data) {
-    this.log(`Player created: ${data.player.username}`, "success");
-  }
-
-  /**
-   * Handle room joined
-   */
   handleRoomJoined(data) {
     this.roomId = data.roomId;
-    this.updatePlayerInfo("roomId", data.roomId);
-    this.updatePlayerInfo(
-      "playersInRoom",
-      `${data.players ? data.players.length : 1}/2`
-    );
-    this.log(`Joined room: ${data.roomId}`, "success");
+    this.roomCode = data.roomCode;
+    this.roomType = data.roomType;
+    this.gameMode = data.gameMode;
+    this.playersInRoom = data.players || [];
 
-    // Enable ready button
-    const readyBtn = document.getElementById("toggleReadyBtn");
-    if (readyBtn) {
-      readyBtn.disabled = false;
+    this.updateRoomInfo();
+    this.enableButton("toggleReadyBtn");
+    this.enableButton("leaveRoomBtn");
+
+    // Determine player position
+    const thisPlayer = this.playersInRoom.find((p) => p.id === this.playerId);
+    if (thisPlayer) {
+      this.playerPosition = thisPlayer.position;
+      this.logEvent("info", `You are ${this.playerPosition}`);
     }
+
+    this.showGameOverlay("Room Joined", "Ready up when you're ready to play!");
   }
 
-  /**
-   * Handle room full
-   */
-  handleRoomFull(data) {
-    this.log(`${data.message}`, "info");
-    this.updatePlayerInfo("playersInRoom", "2/2");
+  handleRoomLeft() {
+    this.roomId = null;
+    this.roomCode = null;
+    this.roomType = null;
+    this.isReady = false;
+    this.playersInRoom = [];
+    this.playerPosition = null;
+
+    this.updateRoomInfo();
+    this.updateReadyStatus();
+    this.disableButton("toggleReadyBtn");
+    this.disableButton("leaveRoomBtn");
+
+    this.showGameOverlay("Left Room", "Join or create a room to play");
   }
 
-  /**
-   * Handle player ready status change
-   */
-  handlePlayerReadyChanged(data) {
-    console.log("handlePlayerReadyChanged called with data:", data);
-    this.log(
-      `${data.username} is ${data.isReady ? "ready" : "not ready"}`,
-      "info"
-    );
-
-    // Update ready status for this player (server confirmation)
+  handlePlayerReady(data) {
     if (data.playerId === this.playerId) {
       this.isReady = data.isReady;
       this.updateReadyStatus();
-      this.log(
-        `Ready status confirmed: ${data.isReady ? "Ready" : "Not Ready"}`,
-        "success"
-      );
     }
 
     if (data.allPlayersReady) {
-      this.log("All players ready! Game starting...", "success");
-      this.log("Waiting for game-started event from server...", "info");
-    } else {
-      this.log(
-        `⏸️ Not all players ready yet (allPlayersReady: ${data.allPlayersReady})`,
-        "info"
-      );
+      this.showGameOverlay("All Ready", "Game starting...");
     }
   }
 
-  /**
-   * Handle game started
-   */
   handleGameStarted(data) {
-    console.log("handleGameStarted called with data:", data);
     this.gameActive = true;
-    this.log(`${data.message}`, "success");
-    this.log(`Game is now active! Controls enabled.`, "success");
+    this.gameTime = data.matchDuration || 30;
+    this.matchId = data.room.matchId;
 
-    // Initialize game state from room data
-    if (data.room && data.room.gameState) {
-      this.gameState = data.room.gameState;
-      this.updateGameField(data.room.gameState);
-      this.log("Initial game state loaded from room data", "success");
-    } else {
-      // Fallback: Initialize with default game state
-      this.gameState = {
-        players: {
-          player1: { x: 150, y: 320 },
-          player2: { x: 650, y: 320 },
-        },
-        ball: { x: 400, y: 200 },
-        score: { player1: 0, player2: 0 },
-        gameTime: 120,
-        isActive: true,
-      };
-      this.updateGameField(this.gameState);
-      this.log("Initialized with default game state", "info");
-    }
-
-    // Update UI for game mode
     this.setGameMode(true);
+    this.hideGameOverlay();
+    this.disableButton("toggleReadyBtn");
 
-    // Update ready button to be disabled during game
-    const readyBtn = document.getElementById("toggleReadyBtn");
-    if (readyBtn) {
-      readyBtn.disabled = true;
-      readyBtn.innerHTML = '<i class="fas fa-gamepad"></i> Game In Progress';
-    }
+    this.showToast("Game Started!", "success");
   }
 
-  /**
-   * Handle game state update (60fps)
-   */
-  handleGameStateUpdate(data) {
-    if (!data) {
-      console.warn("Received empty game-state-update data");
-      return;
-    }
+  handleMatchEnded(data) {
+    this.gameActive = false;
+    this.score = data.finalScore;
+    this.matchId = data.matchId;
 
-    // Handle the server's actual data format: { changes, fullState }
-    let gameStateToUse = null;
+    // Add to match history
+    this.addToMatchHistory({
+      score: data.finalScore,
+      duration: data.duration,
+      winner: data.winner,
+      timestamp: new Date(),
+    });
 
-    if (data.fullState) {
-      // Use full state when available (every 10th update)
-      gameStateToUse = data.fullState;
-      console.log("📦 Using fullState for game update");
-    } else if (data.changes && this.gameState) {
-      // Apply delta changes to existing state
-      gameStateToUse = this.applyGameStateChanges(this.gameState, data.changes);
-      console.log("Applied delta changes to game state");
-    } else if (data.gameState) {
-      // Fallback: direct gameState property (if server format changes)
-      gameStateToUse = data.gameState;
-      console.log("Using direct gameState property");
-    } else {
-      console.warn("No usable game state data in update:", data);
-      return;
-    }
-
-    if (gameStateToUse) {
-      this.gameState = gameStateToUse;
-      this.updateGameField(gameStateToUse);
-    }
+    this.setGameMode(false);
+    this.showRematchPanel(data);
+    this.enableButton("toggleReadyBtn");
   }
 
-  /**
-   * Apply delta changes to current game state
-   */
-  applyGameStateChanges(currentState, changes) {
-    try {
-      const newState = JSON.parse(JSON.stringify(currentState)); // Deep clone
-
-      // Ensure basic structure exists
-      if (!newState.players) {
-        newState.players = { player1: {}, player2: {} };
-      }
-      if (!newState.ball) {
-        newState.ball = {};
-      }
-      if (!newState.score) {
-        newState.score = { player1: 0, player2: 0 };
-      }
-
-      // Apply player changes
-      if (changes.players) {
-        Object.keys(changes.players).forEach((playerKey) => {
-          if (!newState.players[playerKey]) {
-            newState.players[playerKey] = {};
-          }
-          Object.assign(
-            newState.players[playerKey],
-            changes.players[playerKey]
-          );
-        });
-      }
-
-      // Apply ball changes
-      if (changes.ball) {
-        Object.assign(newState.ball, changes.ball);
-      }
-
-      // Apply score changes
-      if (changes.score) {
-        newState.score = changes.score;
-      }
-
-      // Apply time changes
-      if (changes.gameTime !== null && changes.gameTime !== undefined) {
-        newState.gameTime = changes.gameTime;
-      }
-
-      return newState;
-    } catch (error) {
-      console.error("Error applying game state changes:", error);
-      return currentState; // Return original state on error
-    }
-  }
-
-  /**
-   * Handle goal scored
-   */
   handleGoalScored(data) {
-    this.log(`GOAL! ${data.scorer} scored!`, "success");
-    this.log(
-      `Score: ${data.newScore.player1} - ${data.newScore.player2}`,
-      "info"
-    );
-
-    // Add goal celebration animation
+    this.score = data.newScore || data.score;
+    this.updateScoreDisplay();
+    this.resetPositions();
     this.celebrateGoal(data.scorer);
   }
 
-  /**
-   * Handle game ended
-   */
-  handleGameEnded(data) {
+  handleRematchRequest(data) {
+    this.rematchState = data.rematchState;
+    this.updateRematchStatus(`${data.player.username} wants a rematch!`);
+  }
+
+  handleRematchConfirmed(data) {
+    this.hideRematchPanel();
+    this.resetGameState();
+    this.showGameOverlay("Rematch Starting", "Get ready for round 2!");
+    this.updateRematchStatus("");
+  }
+
+  handleRematchDeclined(data) {
+    this.updateRematchStatus(`${data.player.username} declined the rematch`);
+    setTimeout(() => {
+      this.handleRoomLeft();
+    }, 3000);
+  }
+
+  handleRemotePlayerInput(data) {
+    if (data.playerId === this.playerId) return; // Ignore own input
+
+    const position = data.position || this.getPlayerPosition(data.playerId);
+    if (!position || !this.players[position]) return;
+
+    const player = this.players[position];
+
+    switch (data.action) {
+      case "move-left":
+        if (data.input.pressed) {
+          player.velocityX = -this.physics.playerSpeed;
+          player.direction = "left";
+        } else {
+          player.velocityX *= this.physics.friction;
+          player.direction = "idle";
+        }
+        break;
+      case "move-right":
+        if (data.input.pressed) {
+          player.velocityX = this.physics.playerSpeed;
+          player.direction = "right";
+        } else {
+          player.velocityX *= this.physics.friction;
+          player.direction = "idle";
+        }
+        break;
+      case "jump":
+        if (data.input.pressed && player.isOnGround) {
+          player.velocityY = -this.physics.jumpPower;
+          player.isOnGround = false;
+        }
+        break;
+    }
+  }
+
+  // ============ FRONTEND PHYSICS ENGINE ============
+
+  startGameLoop() {
+    this.gameLoop = setInterval(() => {
+      if (this.gameActive) {
+        this.updatePhysics();
+        this.checkCollisions();
+        this.updateTimer();
+      }
+      this.renderGame();
+    }, 16); // 60 FPS
+  }
+
+  updatePhysics() {
+    this.updatePlayerPhysics("player1");
+    this.updatePlayerPhysics("player2");
+    this.updateBallPhysics();
+  }
+
+  updatePlayerPhysics(playerKey) {
+    const player = this.players[playerKey];
+
+    // Apply gravity
+    if (!player.isOnGround) {
+      player.velocityY += this.physics.gravity;
+    }
+
+    // Apply movement (only for local player)
+    if (playerKey === this.playerPosition) {
+      if (this.input.left) {
+        player.velocityX = -this.physics.playerSpeed;
+        player.direction = "left";
+      } else if (this.input.right) {
+        player.velocityX = this.physics.playerSpeed;
+        player.direction = "right";
+      } else {
+        player.velocityX *= this.physics.friction;
+        player.direction = "idle";
+      }
+    }
+
+    // Apply air resistance
+    player.velocityX *= this.physics.airResistance;
+    player.velocityY *= this.physics.airResistance;
+
+    // Update position
+    player.x += player.velocityX;
+    player.y += player.velocityY;
+
+    // Ground collision
+    if (player.y >= this.physics.groundLevel) {
+      player.y = this.physics.groundLevel;
+      player.velocityY = 0;
+      player.isOnGround = true;
+    } else {
+      player.isOnGround = false;
+    }
+
+    // Wall boundaries
+    if (player.x < 25) player.x = 25;
+    if (player.x > 775) player.x = 775;
+  }
+
+  updateBallPhysics() {
+    // Apply gravity
+    this.ball.velocityY += this.physics.gravity;
+
+    // Apply air resistance
+    this.ball.velocityX *= this.physics.airResistance;
+    this.ball.velocityY *= this.physics.airResistance;
+
+    // Update position
+    this.ball.x += this.ball.velocityX;
+    this.ball.y += this.ball.velocityY;
+
+    // Ground collision
+    if (this.ball.y >= this.physics.groundLevel + 15) {
+      this.ball.y = this.physics.groundLevel + 15;
+      this.ball.velocityY *= -this.physics.ballBounce;
+      this.ball.velocityX *= this.physics.friction;
+    }
+
+    // Wall collisions
+    if (this.ball.x <= 15) {
+      this.ball.x = 15;
+      this.ball.velocityX *= -0.8;
+    }
+    if (this.ball.x >= 785) {
+      this.ball.x = 785;
+      this.ball.velocityX *= -0.8;
+    }
+
+    // Ceiling collision
+    if (this.ball.y <= 15) {
+      this.ball.y = 15;
+      this.ball.velocityY *= -this.physics.ballBounce;
+    }
+  }
+
+  checkCollisions() {
+    // Player-ball collisions
+    ["player1", "player2"].forEach((playerKey) => {
+      const player = this.players[playerKey];
+      const dx = player.x - this.ball.x;
+      const dy = player.y - this.ball.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      if (distance < 35) {
+        const kickPower = 8;
+        const normalizedX = dx / distance;
+        const normalizedY = dy / distance;
+
+        this.ball.velocityX = -normalizedX * kickPower;
+        this.ball.velocityY = -normalizedY * kickPower * 0.7;
+
+        this.ball.x -= normalizedX * 30;
+        this.ball.y -= normalizedY * 30;
+      }
+    });
+
+    this.checkGoals();
+  }
+
+  checkGoals() {
+    // Left goal (player2 scores)
+    if (this.ball.x <= 0 && this.ball.y >= 250 && this.ball.y <= 390) {
+      this.handleLocalGoal("player2");
+    }
+    // Right goal (player1 scores)
+    if (this.ball.x >= 800 && this.ball.y >= 250 && this.ball.y <= 390) {
+      this.handleLocalGoal("player1");
+    }
+  }
+
+  handleLocalGoal(scorer) {
+    this.logEvent("success", `Local goal detected: ${scorer} scored!`);
+    this.socket.emit("goal-scored", { scorer: scorer });
+    this.resetPositions();
+  }
+
+  resetPositions() {
+    this.players.player1 = {
+      x: 150,
+      y: 320,
+      velocityX: 0,
+      velocityY: 0,
+      isOnGround: true,
+      direction: "idle",
+    };
+    this.players.player2 = {
+      x: 650,
+      y: 320,
+      velocityX: 0,
+      velocityY: 0,
+      isOnGround: true,
+      direction: "idle",
+    };
+    this.ball = { x: 400, y: 250, velocityX: 0, velocityY: 0 };
+  }
+
+  updateTimer() {
+    this.gameTime -= 0.016;
+    if (this.gameTime <= 0) {
+      this.gameTime = 0;
+      this.endGame();
+    }
+  }
+
+  endGame() {
+    if (!this.gameActive) return;
+
     this.gameActive = false;
-    this.log(`Game Over! Result: ${data.result}`, "success");
-    this.log(
-      `Final Score: ${data.finalScore.player1} - ${data.finalScore.player2}`,
-      "info"
+    let winner = "draw";
+    if (this.score.player1 > this.score.player2) winner = "player1";
+    if (this.score.player2 > this.score.player1) winner = "player2";
+
+    this.socket.emit("game-end", {
+      finalScore: this.score,
+      duration: 30 - this.gameTime,
+      winner: winner,
+    });
+
+    this.logEvent("success", `Time's up! Winner: ${winner}`);
+  }
+
+  renderGame() {
+    // Update score display
+    this.updateScoreDisplay();
+
+    // Update timer
+    const minutes = Math.floor(this.gameTime / 60);
+    const seconds = Math.floor(this.gameTime % 60);
+    this.updateElement(
+      "gameTime",
+      `${minutes}:${seconds.toString().padStart(2, "0")}`
     );
 
-    if (data.winner) {
-      this.log(`Winner: ${data.winner.username || data.winner}!`, "success");
-    } else {
-      this.log(`It's a draw!`, "info");
-    }
+    // Update sprite positions
+    this.updateSpritePosition("player1Sprite", this.players.player1);
+    this.updateSpritePosition("player2Sprite", this.players.player2);
+    this.updateSpritePosition("ballSprite", this.ball, true);
+  }
 
-    // Reset UI
-    this.setGameMode(false);
+  updateSpritePosition(elementId, object, isBall = false) {
+    const element = document.getElementById(elementId);
+    if (!element) return;
 
-    // Reset ready button
-    const readyBtn = document.getElementById("toggleReadyBtn");
-    if (readyBtn) {
-      readyBtn.disabled = false;
-      readyBtn.innerHTML = '<i class="fas fa-check-circle"></i> Ready Up!';
+    element.style.left = `${object.x}px`;
+    element.style.bottom = `${600 - object.y}px`;
+
+    if (!isBall && object.direction) {
+      element.className = element.className.replace(/(left|right|idle)/g, "");
+      element.classList.add(object.direction);
     }
   }
 
-  /**
-   * Handle error messages
-   */
-  handleError(data) {
-    this.log(`Error: ${data.message}`, "error");
+  // ============ INPUT HANDLING ============
 
-    // Show error in UI if it's a ready-related error
-    if (data.message && data.message.includes("ready")) {
-      this.log(`Ready State Error: ${data.message}`, "error");
-      // Reset ready state on error
-      this.isReady = false;
-      this.updateReadyStatus();
+  setupKeyboardControls() {
+    document.addEventListener("keydown", (e) => {
+      if (!this.gameActive || !this.playerPosition) return;
+
+      const key = e.key.toLowerCase();
+      if (this.keys[key]) return;
+      this.keys[key] = true;
+
+      let inputSent = false;
+
+      switch (key) {
+        case "a":
+        case "arrowleft":
+          this.input.left = true;
+          this.sendInput("move-left", { pressed: true });
+          inputSent = true;
+          break;
+        case "d":
+        case "arrowright":
+          this.input.right = true;
+          this.sendInput("move-right", { pressed: true });
+          inputSent = true;
+          break;
+        case "w":
+        case "arrowup":
+        case " ":
+          if (this.players[this.playerPosition].isOnGround) {
+            this.players[this.playerPosition].velocityY =
+              -this.physics.jumpPower;
+            this.players[this.playerPosition].isOnGround = false;
+            this.sendInput("jump", { pressed: true });
+            inputSent = true;
+          }
+          break;
+        case "s":
+        case "arrowdown":
+          this.sendInput("kick", { pressed: true });
+          inputSent = true;
+          break;
+      }
+
+      if (inputSent) e.preventDefault();
+    });
+
+    document.addEventListener("keyup", (e) => {
+      if (!this.gameActive || !this.playerPosition) return;
+
+      const key = e.key.toLowerCase();
+      this.keys[key] = false;
+
+      switch (key) {
+        case "a":
+        case "arrowleft":
+          this.input.left = false;
+          this.sendInput("move-left", { pressed: false });
+          break;
+        case "d":
+        case "arrowright":
+          this.input.right = false;
+          this.sendInput("move-right", { pressed: false });
+          break;
+      }
+    });
+  }
+
+  sendInput(action, data) {
+    if (this.socket && this.isConnected) {
+      this.socket.emit(action, data);
     }
   }
 
-  /**
-   * Setup event listeners for UI elements
-   */
+  // ============ UI EVENT HANDLERS ============
+
   setupEventListeners() {
-    // Web3 connection
+    // Connection actions
     this.addClickListener("connectWalletBtn", () => this.connectWallet());
-
-    // Game action buttons
     this.addClickListener("joinGameBtn", () => this.joinGame());
+
+    // Room management
     this.addClickListener("findMatchBtn", () => this.findMatch());
+    this.addClickListener("createRoomBtn", () => this.createRoom());
+    this.addClickListener("joinByCodeBtn", () => this.joinRoomByCode());
     this.addClickListener("toggleReadyBtn", () => this.toggleReady());
     this.addClickListener("leaveRoomBtn", () => this.leaveRoom());
 
-    // Control buttons - use mousedown/mouseup for continuous movement
-    this.setupButtonControls();
-    this.addClickListener("jumpBtn", () => this.jump());
-    this.addClickListener("kickBtn", () => this.kick());
+    // Game controls
+    this.addClickListener("goalPlayer1Btn", () => this.testGoal("player1"));
+    this.addClickListener("goalPlayer2Btn", () => this.testGoal("player2"));
+    this.addClickListener("endGameBtn", () => this.endGame());
 
-    // NFT selection change
-    const nftSelect = document.getElementById("nftSelect");
-    if (nftSelect) {
-      nftSelect.addEventListener("change", () => this.updateNFTModifiers());
-    }
+    // Rematch controls
+    this.addClickListener("requestRematchBtn", () => this.requestRematch());
+    this.addClickListener("declineRematchBtn", () => this.declineRematch());
+
+    // Monitor controls
+    this.addClickListener("clearLogsBtn", () => this.clearLogs());
+    this.addClickListener("toggleAutoScrollBtn", () => this.toggleAutoScroll());
   }
 
-  /**
-   * Add click listener helper
-   */
   addClickListener(elementId, callback) {
     const element = document.getElementById(elementId);
     if (element) {
@@ -424,426 +709,134 @@ class HeadBallClient {
     }
   }
 
-  /**
-   * Setup button controls for movement
-   */
-  setupButtonControls() {
-    // Left button
-    const leftBtn = document.getElementById("moveLeftBtn");
-    if (leftBtn) {
-      leftBtn.addEventListener("mousedown", () => {
-        this.isMovingLeft = true;
-        this.setControlActive("moveLeftBtn", true);
-      });
-      leftBtn.addEventListener("mouseup", () => {
-        this.isMovingLeft = false;
-        this.setControlActive("moveLeftBtn", false);
-      });
-      leftBtn.addEventListener("mouseleave", () => {
-        this.isMovingLeft = false;
-        this.setControlActive("moveLeftBtn", false);
-      });
-    }
-
-    // Right button
-    const rightBtn = document.getElementById("moveRightBtn");
-    if (rightBtn) {
-      rightBtn.addEventListener("mousedown", () => {
-        this.isMovingRight = true;
-        this.setControlActive("moveRightBtn", true);
-      });
-      rightBtn.addEventListener("mouseup", () => {
-        this.isMovingRight = false;
-        this.setControlActive("moveRightBtn", false);
-      });
-      rightBtn.addEventListener("mouseleave", () => {
-        this.isMovingRight = false;
-        this.setControlActive("moveRightBtn", false);
-      });
-    }
-  }
-
-  /**
-   * Setup keyboard controls
-   */
-  setupKeyboardControls() {
-    // Start continuous movement input loop
-    this.startMovementLoop();
-
-    document.addEventListener("keydown", (e) => {
-      if (this.keys[e.key]) return; // Prevent key repeat
-      this.keys[e.key] = true;
-
-      switch (e.key.toLowerCase()) {
-        case "arrowleft":
-        case "a":
-          this.isMovingLeft = true;
-          this.setControlActive("moveLeftBtn", true);
-          e.preventDefault();
-          break;
-        case "arrowright":
-        case "d":
-          this.isMovingRight = true;
-          this.setControlActive("moveRightBtn", true);
-          e.preventDefault();
-          break;
-        case "arrowup":
-        case "w":
-        case " ": // Spacebar
-          this.jump();
-          this.setControlActive("jumpBtn", true);
-          setTimeout(() => this.setControlActive("jumpBtn", false), 200);
-          e.preventDefault();
-          break;
-        case "arrowdown":
-        case "s":
-          this.kick();
-          this.setControlActive("kickBtn", true);
-          setTimeout(() => this.setControlActive("kickBtn", false), 200);
-          e.preventDefault();
-          break;
-      }
-    });
-
-    document.addEventListener("keyup", (e) => {
-      this.keys[e.key] = false;
-
-      switch (e.key.toLowerCase()) {
-        case "arrowleft":
-        case "a":
-          this.isMovingLeft = false;
-          this.setControlActive("moveLeftBtn", false);
-          break;
-        case "arrowright":
-        case "d":
-          this.isMovingRight = false;
-          this.setControlActive("moveRightBtn", false);
-          break;
-      }
-    });
-  }
-
-  /**
-   * Start continuous movement input loop (60fps)
-   */
-  startMovementLoop() {
-    setInterval(() => {
-      if (!this.gameActive) return;
-
-      if (this.isMovingLeft) {
-        this.socket.emit("move-left", { pressed: true });
-      } else if (this.isMovingRight) {
-        this.socket.emit("move-right", { pressed: true });
-      } else {
-        // Send stop if not moving
-        this.socket.emit("stop-move", { direction: "horizontal" });
-      }
-    }, 16); // 60fps movement updates
-  }
-
-  /**
-   * Set control button active state
-   */
-  setControlActive(buttonId, active) {
-    const button = document.getElementById(buttonId);
-    if (button) {
-      if (active) {
-        button.classList.add("active");
-      } else {
-        button.classList.remove("active");
-      }
-    }
-  }
-
-  /**
-   * Web3 Connection Methods
-   */
-  generateRandomWallet() {
-    const chars = "0123456789abcdef";
-    let result = "0x";
-    for (let i = 0; i < 40; i++) {
-      result += chars[Math.floor(Math.random() * chars.length)];
-    }
-    return result;
-  }
+  // ============ ACTION METHODS ============
 
   connectWallet() {
-    // Generate random wallet address (username will be auto-generated by schema)
-    const walletAddress = this.generateRandomWallet();
-
-    // Generate username using schema logic for display
-    const defaultUsername = `Player_${walletAddress.slice(-6)}`;
-
-    // Update UI
-    document.getElementById("walletAddress").textContent = walletAddress;
-
-    // Store wallet data
-    this.walletAddress = walletAddress;
-
-    // Update button state
-    const connectBtn = document.getElementById("connectWalletBtn");
-    connectBtn.innerHTML = '<i class="fas fa-check"></i> Wallet Connected';
-    connectBtn.disabled = true;
-    connectBtn.classList.add("connected");
-
-    // Enable join game button
-    const joinBtn = document.getElementById("joinGameBtn");
-    if (joinBtn) {
-      joinBtn.disabled = false;
+    // Simulate wallet connection - generate valid 40-character hex address
+    let hexString = "";
+    for (let i = 0; i < 40; i++) {
+      hexString += Math.floor(Math.random() * 16).toString(16);
     }
+    this.walletAddress = "0x" + hexString;
 
-    this.log(`Wallet connected: ${walletAddress}`, "success");
-    this.log(
-      `Username will be: ${defaultUsername} (auto-generated by schema)`,
-      "info"
+    this.updatePlayerInfo(
+      "walletAddress",
+      this.walletAddress.slice(0, 6) + "..." + this.walletAddress.slice(-4)
     );
+    this.toggleButtonState("connectWalletBtn", true, "Connected");
+    this.logEvent("success", `Wallet connected: ${this.walletAddress}`);
   }
 
-  updateNFTModifiers() {
-    const nftSelect = document.getElementById("nftSelect");
-    const modifiersDisplay = document.getElementById("nftModifiers");
-
-    if (!nftSelect || !modifiersDisplay) return;
-
-    const selectedNFT = nftSelect.value;
-    let modifiers = { speed: 1.0, jump: 1.0, kick: 1.0 };
-
-    // Set modifiers based on NFT selection
-    switch (selectedNFT) {
-      case "674a8f1c2d3e4f5g6h7i8j9k": // Fire Head
-        modifiers = { speed: 1.2, jump: 1.0, kick: 1.0 };
-        break;
-      case "674a8f1c2d3e4f5g6h7i8j9l": // Ice Head
-        modifiers = { speed: 1.0, jump: 1.15, kick: 1.0 };
-        break;
-      case "674a8f1c2d3e4f5g6h7i8j9m": // Lightning Head
-        modifiers = { speed: 1.0, jump: 1.0, kick: 1.25 };
-        break;
-      default:
-        modifiers = { speed: 1.0, jump: 1.0, kick: 1.0 };
-    }
-
-    // Update display
-    modifiersDisplay.innerHTML = `
-      <span class="modifier">Speed: ${modifiers.speed}x</span>
-      <span class="modifier">Jump: ${modifiers.jump}x</span>
-      <span class="modifier">Kick: ${modifiers.kick}x</span>
-    `;
-
-    this.log(
-      `NFT modifiers updated: Speed ${modifiers.speed}x, Jump ${modifiers.jump}x, Kick ${modifiers.kick}x`,
-      "info"
-    );
-  }
-
-  /**
-   * Game Actions
-   */
   joinGame() {
-    if (!this.isConnected) {
-      this.log("Not connected to server", "error");
-      return;
-    }
-
     if (!this.walletAddress) {
-      this.log("Please connect your wallet first", "error");
+      this.showToast("Please connect wallet first", "error");
       return;
     }
 
-    const nftSelect = document.getElementById("nftSelect");
-    const selectedNFT = nftSelect ? nftSelect.value : null;
-
-    const joinData = {
+    this.socket.emit("join-game", {
       walletAddress: this.walletAddress,
-      nftId: selectedNFT || null,
-    };
+      nftId: null, // Could be extended for NFT selection
+    });
 
-    this.socket.emit("join-game", joinData);
-    this.log(`Joining game with wallet ${this.walletAddress}...`, "info");
-
-    if (selectedNFT) {
-      this.log(`Using NFT: ${selectedNFT}`, "info");
-    }
+    this.logEvent("socket", "Joining game...");
   }
 
   findMatch() {
-    if (!this.isConnected) {
-      this.log("Not connected to server", "error");
+    this.socket.emit("find-match");
+    this.logEvent("socket", "Finding match...");
+    this.showToast("Looking for opponent...", "info");
+  }
+
+  createRoom() {
+    this.socket.emit("create-room");
+    this.logEvent("socket", "Creating room...");
+  }
+
+  joinRoomByCode() {
+    const roomCode = document.getElementById("roomCodeInput").value.trim();
+    if (!roomCode) {
+      this.showToast("Please enter a room code", "error");
       return;
     }
 
-    this.socket.emit("find-match");
-    this.log("Finding match...", "info");
+    this.socket.emit("join-room-by-code", { roomCode });
+    this.logEvent("socket", `Attempting to join room: ${roomCode}`);
   }
 
   toggleReady() {
-    if (!this.roomId) {
-      this.log("Not in a room", "error");
-      return;
-    }
-
-    if (this.gameActive) {
-      this.log("Cannot change ready status - game is already active", "error");
-      return;
-    }
-
-    // Toggle the local state immediately for responsive UI
-    this.isReady = !this.isReady;
-    this.updateReadyStatus();
-
-    this.socket.emit("ready");
-    this.log(
-      `${this.isReady ? "Setting ready" : "Canceling ready"}...`,
-      "info"
-    );
-    this.log(`Sent ready event to server`, "debug");
+    this.socket.emit("player-ready");
+    this.logEvent("socket", "Toggling ready status...");
   }
 
   leaveRoom() {
-    if (!this.roomId) {
-      this.log("Not in a room", "error");
+    this.socket.emit("leave-room");
+    this.logEvent("socket", "Leaving room...");
+  }
+
+  testGoal(scorer) {
+    if (!this.gameActive) {
+      this.showToast("Game must be active to score goals", "warning");
       return;
     }
 
-    this.socket.emit("leave-game");
-    this.resetGameState();
-    this.log("Left the room", "info");
+    this.socket.emit("goal-scored", { scorer });
+    this.logEvent("socket", `Test goal: ${scorer} scored!`);
   }
 
-  /**
-   * Player Controls
-   */
-  // Legacy movement functions removed - now using continuous movement loop
-
-  jump() {
-    this.socket.emit("jump", { pressed: true });
+  requestRematch() {
+    this.socket.emit("request-rematch");
+    this.rematchRequested = true;
+    this.updateRematchStatus("Rematch request sent...");
+    this.logEvent("socket", "Requesting rematch...");
   }
 
-  kick() {
-    this.socket.emit("kick", { pressed: true });
+  declineRematch() {
+    this.socket.emit("decline-rematch");
+    this.updateRematchStatus("Rematch declined");
+    this.logEvent("socket", "Declining rematch...");
   }
 
-  /**
-   * Update game field visualization
-   */
-  updateGameField(gameState) {
-    if (!gameState || !gameState.players || !gameState.ball) {
-      return;
-    }
-
-    const fieldWidth = 800; // Game field width
-    const fieldHeight = 400; // Game field height
-    const groundLevel = 320; // Ground level from game
-
-    // Convert game coordinates to visual percentages
-    const gameToVisual = (gameX, gameY) => {
-      const visualX = (gameX / fieldWidth) * 100;
-      const visualY = ((groundLevel - gameY) / fieldHeight) * 100;
-      return { x: visualX, y: visualY };
-    };
-
-    // Update player1 position
-    if (gameState.players.player1) {
-      const p1Pos = gameToVisual(
-        gameState.players.player1.x,
-        gameState.players.player1.y
-      );
-      const p1Element = document.getElementById("player1Sprite");
-      if (p1Element) {
-        p1Element.style.left = `${Math.max(0, Math.min(95, p1Pos.x))}%`;
-        p1Element.style.bottom = `${Math.max(5, Math.min(90, p1Pos.y))}%`;
-      }
-    }
-
-    // Update player2 position
-    if (gameState.players.player2) {
-      const p2Pos = gameToVisual(
-        gameState.players.player2.x,
-        gameState.players.player2.y
-      );
-      const p2Element = document.getElementById("player2Sprite");
-      if (p2Element) {
-        p2Element.style.left = `${Math.max(0, Math.min(95, p2Pos.x))}%`;
-        p2Element.style.bottom = `${Math.max(5, Math.min(90, p2Pos.y))}%`;
-      }
-    }
-
-    // Update ball position
-    if (gameState.ball) {
-      const ballPos = gameToVisual(gameState.ball.x, gameState.ball.y);
-      const ballElement = document.getElementById("ballSprite");
-      if (ballElement) {
-        ballElement.style.left = `${Math.max(0, Math.min(95, ballPos.x))}%`;
-        ballElement.style.bottom = `${Math.max(5, Math.min(90, ballPos.y))}%`;
-      }
-    }
-
-    // Update score
-    if (gameState.score) {
-      this.updatePlayerInfo("player1Score", gameState.score.player1);
-      this.updatePlayerInfo("player2Score", gameState.score.player2);
-    }
-
-    // Update game time
-    if (gameState.gameTime !== undefined) {
-      const minutes = Math.floor(gameState.gameTime / 60);
-      const seconds = Math.floor(gameState.gameTime % 60);
-      this.updatePlayerInfo(
-        "gameTime",
-        `${minutes}:${seconds.toString().padStart(2, "0")}`
-      );
-    }
+  clearLogs() {
+    const eventLog = document.getElementById("eventLog");
+    eventLog.innerHTML =
+      '<div class="log-entry info"><span class="timestamp">[' +
+      this.formatTime(new Date()) +
+      ']</span><span class="event-type info">[INFO]</span><span class="message">Event log cleared</span></div>';
+    this.eventCount = 1;
   }
 
-  /**
-   * Celebrate goal with animation
-   */
-  celebrateGoal(scorer) {
-    const scorerElement =
-      scorer === "player1"
-        ? document.getElementById("player1Sprite")
-        : document.getElementById("player2Sprite");
-
-    if (scorerElement) {
-      scorerElement.style.transform = "scale(1.2)";
-      scorerElement.style.animation = "bounce 0.5s ease-in-out";
-
-      setTimeout(() => {
-        scorerElement.style.transform = "";
-        scorerElement.style.animation = "";
-      }, 500);
-    }
+  toggleAutoScroll() {
+    this.autoScroll = !this.autoScroll;
+    const btn = document.getElementById("toggleAutoScrollBtn");
+    btn.innerHTML = this.autoScroll
+      ? '<i class="fas fa-arrow-down"></i> Auto-scroll'
+      : '<i class="fas fa-pause"></i> Manual';
+    this.logEvent(
+      "info",
+      `Auto-scroll ${this.autoScroll ? "enabled" : "disabled"}`
+    );
   }
 
-  /**
-   * API Testing
-   */
+  // ============ UI UPDATE METHODS ============
 
-  /**
-   * UI Helper Methods
-   */
   updateConnectionStatus(status, connected) {
-    const statusElement = document.getElementById("connectionStatus");
-    const dotElement = document.getElementById("statusDot");
-
-    if (statusElement) {
-      statusElement.textContent = status;
-    }
-
-    if (dotElement) {
-      if (connected) {
-        dotElement.classList.add("connected");
-      } else {
-        dotElement.classList.remove("connected");
-      }
+    this.updateElement("connectionStatus", status);
+    const statusDot = document.getElementById("statusDot");
+    if (statusDot) {
+      statusDot.className = connected ? "status-dot connected" : "status-dot";
     }
   }
 
   updatePlayerInfo(field, value) {
-    const element = document.getElementById(field);
-    if (element) {
-      element.textContent = value;
-    }
+    this.updateElement(field, value);
+  }
+
+  updateRoomInfo() {
+    this.updateElement("roomId", this.roomId || "None");
+    this.updateElement("roomCode", this.roomCode || "None");
+    this.updateElement("roomType", this.roomType || "None");
+    this.updateElement("gameMode", this.gameMode);
+    this.updateElement("playersInRoom", `${this.playersInRoom.length}/2`);
   }
 
   updateReadyStatus() {
@@ -852,120 +845,224 @@ class HeadBallClient {
 
     if (statusElement) {
       statusElement.textContent = this.isReady ? "Ready" : "Not Ready";
-      if (this.isReady) {
-        statusElement.classList.add("ready");
-      } else {
-        statusElement.classList.remove("ready");
-      }
+      statusElement.className = this.isReady
+        ? "status-badge ready"
+        : "status-badge not-ready";
     }
 
     if (readyBtn) {
-      // Update button text and style
       readyBtn.innerHTML = this.isReady
-        ? '<i class="fas fa-times-circle"></i> Cancel Ready'
+        ? '<i class="fas fa-times"></i> Unready'
         : '<i class="fas fa-check-circle"></i> Ready Up!';
-
-      // Update button appearance
-      if (this.isReady) {
-        readyBtn.classList.add("ready-active");
-      } else {
-        readyBtn.classList.remove("ready-active");
-      }
+      readyBtn.className = this.isReady ? "btn btn-warning" : "btn btn-success";
     }
+  }
+
+  updateScoreDisplay() {
+    this.updateElement("player1Score", this.score.player1);
+    this.updateElement("player2Score", this.score.player2);
+  }
+
+  updatePlayersInRoom() {
+    this.updateElement("playersInRoom", `${this.playersInRoom.length}/2`);
+  }
+
+  updateStats(stats) {
+    if (stats.totalPlayers !== undefined)
+      this.updateElement("totalPlayers", stats.totalPlayers);
+    if (stats.activeRooms !== undefined)
+      this.updateElement("activeRooms", stats.activeRooms);
+    if (stats.memoryUsage !== undefined)
+      this.updateElement("memoryUsage", stats.memoryUsage);
   }
 
   setGameMode(active) {
-    // Enable/disable control buttons based on game state
-    const controlButtons = [
-      "moveLeftBtn",
-      "moveRightBtn",
-      "jumpBtn",
-      "kickBtn",
-    ];
-    controlButtons.forEach((buttonId) => {
-      const button = document.getElementById(buttonId);
-      if (button) {
-        button.disabled = !active;
-      }
+    const gameField = document.getElementById("gameField");
+    if (gameField) {
+      gameField.className = active ? "game-field active" : "game-field";
+    }
+
+    // Enable/disable game controls
+    const gameControls = ["goalPlayer1Btn", "goalPlayer2Btn", "endGameBtn"];
+    gameControls.forEach((id) => {
+      const element = document.getElementById(id);
+      if (element) element.disabled = !active;
     });
   }
 
-  resetGameState() {
-    this.roomId = null;
-    this.isReady = false;
-    this.gameActive = false;
-    this.gameState = null;
+  showGameOverlay(title, message) {
+    const overlay = document.getElementById("gameOverlay");
+    const titleEl = document.getElementById("overlayTitle");
+    const messageEl = document.getElementById("overlayMessage");
 
-    // Reset UI
-    this.updatePlayerInfo("roomId", "None");
-    this.updatePlayerInfo("playersInRoom", "0/2");
-    this.updatePlayerInfo("player1Score", "0");
-    this.updatePlayerInfo("player2Score", "0");
-    this.updatePlayerInfo("gameTime", "2:00");
-    this.updateReadyStatus();
-    this.setGameMode(false);
-
-    // Reset player positions
-    const player1 = document.getElementById("player1Sprite");
-    const player2 = document.getElementById("player2Sprite");
-    const ball = document.getElementById("ballSprite");
-
-    if (player1) {
-      player1.style.left = "20%";
-      player1.style.bottom = "10%";
-    }
-    if (player2) {
-      player2.style.left = "75%";
-      player2.style.bottom = "10%";
-    }
-    if (ball) {
-      ball.style.left = "47.5%";
-      ball.style.bottom = "50%";
+    if (overlay && titleEl && messageEl) {
+      titleEl.textContent = title;
+      messageEl.textContent = message;
+      overlay.classList.remove("hidden");
     }
   }
 
-  /**
-   * Logging system (console only)
-   */
-  log(message, type = "info") {
-    const timestamp = new Date().toLocaleTimeString();
-    const logLine = `[${timestamp}] ${message}`;
-
-    // Log to console with appropriate level
-    switch (type) {
-      case "error":
-        console.error(logLine);
-        break;
-      case "warning":
-        console.warn(logLine);
-        break;
-      case "success":
-      case "info":
-      default:
-        console.log(logLine);
-        break;
+  hideGameOverlay() {
+    const overlay = document.getElementById("gameOverlay");
+    if (overlay) {
+      overlay.classList.add("hidden");
     }
+  }
+
+  showRematchPanel(data) {
+    const panel = document.getElementById("rematchPanel");
+    const finalScore = document.getElementById("finalScore");
+    const matchDuration = document.getElementById("matchDuration");
+    const matchWinner = document.getElementById("matchWinner");
+
+    if (panel) panel.style.display = "block";
+    if (finalScore)
+      finalScore.textContent = `${data.finalScore.player1} - ${data.finalScore.player2}`;
+    if (matchDuration) matchDuration.textContent = `${data.duration}s`;
+    if (matchWinner) matchWinner.textContent = data.winner;
+  }
+
+  hideRematchPanel() {
+    const panel = document.getElementById("rematchPanel");
+    if (panel) panel.style.display = "none";
+  }
+
+  updateRematchStatus(message) {
+    const status = document.getElementById("rematchStatus");
+    if (status) status.textContent = message;
+  }
+
+  celebrateGoal(scorer) {
+    const scoreElement = document.getElementById(scorer + "Score");
+    if (scoreElement) {
+      scoreElement.classList.add("score-update");
+      setTimeout(() => scoreElement.classList.remove("score-update"), 500);
+    }
+
+    this.showToast(`Goal by ${scorer}!`, "success");
+  }
+
+  showToast(message, type = "info") {
+    // Simple toast notification (could be enhanced)
+    console.log(`[${type.toUpperCase()}] ${message}`);
+  }
+
+  addToMatchHistory(match) {
+    this.matchHistory.unshift(match);
+    this.updateMatchHistoryDisplay();
+  }
+
+  updateMatchHistoryDisplay() {
+    const container = document.getElementById("matchHistory");
+    if (!container) return;
+
+    if (this.matchHistory.length === 0) {
+      container.innerHTML = '<p class="no-matches">No matches played yet</p>';
+      return;
+    }
+
+    container.innerHTML = this.matchHistory
+      .slice(0, 5)
+      .map(
+        (match) => `
+      <div class="match-item">
+        <div class="match-header">
+          <span class="match-score">${match.score.player1} - ${match.score.player2}</span>
+          <span class="match-duration">${match.duration}s</span>
+        </div>
+        <div class="match-result">Winner: ${match.winner}</div>
+      </div>
+    `
+      )
+      .join("");
+  }
+
+  // ============ UTILITY METHODS ============
+
+  updateElement(id, value) {
+    const element = document.getElementById(id);
+    if (element) element.textContent = value;
+  }
+
+  enableButton(id) {
+    const element = document.getElementById(id);
+    if (element) element.disabled = false;
+  }
+
+  disableButton(id) {
+    const element = document.getElementById(id);
+    if (element) element.disabled = true;
+  }
+
+  toggleButtonState(id, connected, connectedText) {
+    const element = document.getElementById(id);
+    if (element) {
+      if (connected) {
+        element.classList.add("connected");
+        element.innerHTML = `<i class="fas fa-check"></i> ${connectedText}`;
+      } else {
+        element.classList.remove("connected");
+        element.innerHTML = `<i class="fas fa-link"></i> Connect Wallet (Demo)`;
+      }
+    }
+  }
+
+  formatTime(date) {
+    return date.toLocaleTimeString();
+  }
+
+  getPlayerPosition(playerId) {
+    const player = this.playersInRoom.find((p) => p.id === playerId);
+    return player ? player.position : null;
+  }
+
+  logEvent(type, message, data = null) {
+    const timestamp = this.formatTime(new Date());
+    const eventLog = document.getElementById("eventLog");
+
+    if (!eventLog) return;
+
+    const logEntry = document.createElement("div");
+    logEntry.className = "log-entry";
+    logEntry.innerHTML = `
+      <span class="timestamp">[${timestamp}]</span>
+      <span class="event-type ${type}">[${type.toUpperCase()}]</span>
+      <span class="message">${message}${
+      data ? " - " + JSON.stringify(data, null, 2) : ""
+    }</span>
+    `;
+
+    eventLog.appendChild(logEntry);
+    this.eventCount++;
+
+    // Auto-scroll to bottom
+    if (this.autoScroll) {
+      eventLog.scrollTop = eventLog.scrollHeight;
+    }
+
+    // Limit log entries
+    while (eventLog.children.length > 100) {
+      eventLog.removeChild(eventLog.firstChild);
+    }
+  }
+
+  resetGameState() {
+    this.gameActive = false;
+    this.isReady = false;
+    this.score = { player1: 0, player2: 0 };
+    this.gameTime = 30;
+    this.matchId = null;
+
+    this.resetPositions();
+    this.updateScoreDisplay();
+    this.updateReadyStatus();
+    this.setGameMode(false);
+    this.hideRematchPanel();
+    this.showGameOverlay("Disconnected", "Please reconnect and join a room");
   }
 }
 
-// Initialize the client when DOM is loaded
+// Initialize the demo when page loads
 document.addEventListener("DOMContentLoaded", () => {
-  window.headBallClient = new HeadBallClient();
+  window.gameDemo = new SocketEventDemo();
 });
-
-// Add CSS animations
-const style = document.createElement("style");
-style.textContent = `
-    @keyframes bounce {
-        0%, 20%, 60%, 100% {
-            transform: translateY(0) scale(1.2);
-        }
-        40% {
-            transform: translateY(-20px) scale(1.2);
-        }
-        80% {
-            transform: translateY(-5px) scale(1.2);
-        }
-    }
-`;
-document.head.appendChild(style);

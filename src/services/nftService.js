@@ -1,6 +1,16 @@
 const NFT = require("../models/nft");
 const User = require("../models/user");
 
+/**
+ * @fileoverview NFT Service
+ * @description Service for managing NFT collection and calculating gameplay modifiers
+ * @module services/nftService
+ */
+
+/**
+ * NFT Service - Handles NFT management and gameplay modifier calculations
+ * @class NFTService
+ */
 class NFTService {
   constructor() {
     // Game modifier constants for gameplay

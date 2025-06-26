@@ -5,11 +5,24 @@ const gameBroadcaster = require("../services/gameBroadcaster");
 const userService = require("../services/userService");
 const nftService = require("../services/nftService");
 
-// Socket event handlers as individual functions
+/**
+ * @fileoverview WebSocket Configuration and Event Handlers
+ * @description Socket.IO event handlers for real-time headball gameplay
+ * @module config/socket
+ */
+
+// === Socket Event Handlers ===
+
+/**
+ * Handle player joining the game
+ * @param {Socket} socket - Socket.IO socket instance
+ * @param {Server} io - Socket.IO server instance
+ * @param {Object} data - Player join data containing walletAddress and optional nftId
+ */
 const handlePlayerJoin = async (socket, io, data) => {
   try {
-    // Validate required data - only check what exists in User model
-    if (!data || !data.walletAddress) {
+    // Validate required data
+    if (!data?.walletAddress) {
       socket.emit("error", {
         message: "Wallet address is required",
         type: "VALIDATION_ERROR",
@@ -19,10 +32,8 @@ const handlePlayerJoin = async (socket, io, data) => {
 
     // Create or get user from database
     const userResult = await userService.createUserFromWallet(
-      data.walletAddress,
-      data.username // username is optional, has default
+      data.walletAddress
     );
-
     if (!userResult.success) {
       socket.emit("error", {
         message: userResult.error,
@@ -34,7 +45,11 @@ const handlePlayerJoin = async (socket, io, data) => {
     const user = userResult.user;
 
     // Get NFT modifiers if player specifies an NFT
-    let nftModifiers = null;
+    let nftModifiers = {
+      speedMultiplier: 1.0,
+      jumpMultiplier: 1.0,
+      superkickMultiplier: 1.0,
+    };
     if (data.nftId) {
       const nftResult = await nftService.getNFTById(data.nftId);
       if (nftResult.success) {
@@ -42,41 +57,29 @@ const handlePlayerJoin = async (socket, io, data) => {
       }
     }
 
-    // Default modifiers if no NFT specified
-    if (!nftModifiers) {
-      nftModifiers = {
-        speedMultiplier: 1.0,
-        jumpMultiplier: 1.0,
-        superkickMultiplier: 1.0,
-      };
+    // Create player or get existing
+    let result = gameService.createPlayer(
+      socket.id,
+      user.walletAddress,
+      user._id
+    );
+    if (!result.success && result.reason === "Player already exists") {
+      const existingPlayer = gameService.getPlayer(socket.id);
+      if (existingPlayer) {
+        result = { success: true, player: existingPlayer };
+      }
     }
 
-    // Create player with Web3 data
-    const result = gameService.createPlayer(
-      socket.id,
-      data.username,
-      user._id // Link to database user
-    );
-
     if (result.success) {
-      // Store additional Web3 data in player object
-      result.player.walletAddress = user.walletAddress;
       result.player.nftModifiers = nftModifiers;
 
-      gameBroadcaster.broadcastPlayerCreated(socket.id, {
+      socket.emit("player-created", {
         player: result.player.toJSON(),
-        user: {
-          walletAddress: user.walletAddress,
-        },
+        user: { walletAddress: user.walletAddress },
         nftModifiers: nftModifiers,
       });
 
       socket.emit("game-status", gameService.getGameStats());
-      console.log(
-        `${result.player.username} (${
-          user.walletAddress
-        }) joined the game with modifiers: ${JSON.stringify(nftModifiers)}`
-      );
     } else {
       gameBroadcaster.broadcastError(socket.id, { message: result.reason });
     }
@@ -89,47 +92,118 @@ const handlePlayerJoin = async (socket, io, data) => {
   }
 };
 
+/**
+ * Handle finding a match through matchmaking
+ * @param {Socket} socket - Socket.IO socket instance
+ * @param {Server} io - Socket.IO server instance
+ */
 const handleFindMatch = (socket, io) => {
-  const result = gameService.findMatch(socket.id);
+  try {
+    const result = gameService.findMatch(socket.id);
 
-  if (result.success) {
-    const room = result.room;
-    socket.join(room.id);
+    if (result.success) {
+      const room = result.room;
+      socket.join(room.id);
 
-    console.log(
-      `Player ${socket.id} joined room ${room.id}. Players in room: ${room.players.length}`
-    );
+      // Notify player
+      gameBroadcaster.broadcastRoomJoined(socket.id, {
+        roomId: room.id,
+        roomCode: room.code,
+        players: room.players.map((p) => p.toJSON()),
+        waitingForPlayers: room.maxPlayers - room.players.length,
+        gameMode: "1v1",
+        roomType: "matchmaking",
+      });
 
-    // Notify player
-    gameBroadcaster.broadcastRoomJoined(socket.id, {
-      roomId: room.id,
-      players: room.players.map((p) => p.toJSON()),
-      waitingForPlayers: room.maxPlayers - room.players.length,
-      gameMode: "1v1",
-    });
+      // Notify other players in room
+      socket.to(room.id).emit("player-joined-room", {
+        player: gameService.getPlayer(socket.id).toJSON(),
+        waitingForPlayers: room.maxPlayers - room.players.length,
+      });
 
-    // Notify other players in room
-    socket.to(room.id).emit("player-joined-room", {
-      player: gameService.getPlayer(socket.id).toJSON(),
-      waitingForPlayers: room.maxPlayers - room.players.length,
-    });
-
-    // Check if room is full (2 players for 1v1)
-    if (room.isFull()) {
-      gameBroadcaster.broadcastRoomFull(
-        room.id,
-        "Found opponent! Both players can now ready up for 1v1 match."
-      );
+      // Check if room is full
+      if (room.isFull()) {
+        io.to(room.id).emit("room-full", {
+          message: "Found opponent! Ready up for 1v1 match.",
+          roomId: room.id,
+          timestamp: Date.now(),
+        });
+      }
+    } else {
+      gameBroadcaster.broadcastError(socket.id, { message: result.reason });
     }
-  } else {
-    gameBroadcaster.broadcastError(socket.id, { message: result.reason });
+  } catch (error) {
+    console.error("Error in handleFindMatch:", error);
+    socket.emit("error", {
+      message: "Failed to find match",
+      type: "SERVER_ERROR",
+    });
   }
 };
 
+/**
+ * Handle creating a new game room
+ * @param {Socket} socket - Socket.IO socket instance
+ * @param {Server} io - Socket.IO server instance
+ */
+const handleCreateRoom = async (socket, io) => {
+  try {
+    const player = gameService.getPlayer(socket.id);
+    if (!player) {
+      socket.emit("error", {
+        message: "Player not found. Please join the game first.",
+        type: "PLAYER_NOT_FOUND",
+      });
+      return;
+    }
+
+    if (player.currentRoom) {
+      socket.emit("error", {
+        message: "You are already in a room",
+        type: "ALREADY_IN_ROOM",
+      });
+      return;
+    }
+
+    const room = gameService.createRoom();
+    const joinResult = room.addPlayer(player);
+
+    if (!joinResult.success) {
+      socket.emit("error", {
+        message: joinResult.reason || "Failed to join created room",
+        type: "ROOM_JOIN_ERROR",
+      });
+      return;
+    }
+
+    socket.join(room.id);
+
+    gameBroadcaster.broadcastRoomCreated(socket.id, {
+      roomId: room.id,
+      roomCode: room.code,
+      players: room.players.map((p) => p.toJSON()),
+      waitingForPlayers: room.maxPlayers - room.players.length,
+      gameMode: room.gameMode || "1v1",
+      roomType: "created",
+    });
+  } catch (error) {
+    console.error("Error in handleCreateRoom:", error);
+    socket.emit("error", {
+      message: "Failed to create room",
+      type: "ROOM_CREATE_ERROR",
+    });
+  }
+};
+
+/**
+ * Handle joining a room by code
+ * @param {Socket} socket - Socket.IO socket instance
+ * @param {Server} io - Socket.IO server instance
+ * @param {Object} data - Data containing roomCode
+ */
 const handleJoinRoomByCode = async (socket, io, data) => {
   try {
     const { roomCode } = data;
-
     if (!roomCode) {
       socket.emit("error", {
         message: "Room code is required",
@@ -139,40 +213,33 @@ const handleJoinRoomByCode = async (socket, io, data) => {
     }
 
     const result = await gameService.joinRoomByCode(socket.id, roomCode);
-
     if (result.success) {
-      const room = result.room;
-      socket.join(room.id);
+      const roomData = result.room;
+      const actualRoom = gameService.getRoom(roomData.id);
 
-      console.log(
-        `Player ${socket.id} joined room with code ${roomCode} (${room.id}). Players in room: ${room.players.length}`
-      );
+      socket.join(roomData.id);
 
-      // Notify player
       gameBroadcaster.broadcastRoomJoined(socket.id, {
-        roomId: room.id,
+        roomId: roomData.id,
         roomCode: roomCode,
-        players: room.players.map((p) => p.toJSON()),
-        waitingForPlayers: room.maxPlayers - room.players.length,
-        gameMode: room.gameMode || "1v1",
-        roomType: "code", // Indicate this was a code-based join
+        players: roomData.players,
+        waitingForPlayers: roomData.maxPlayers - roomData.players.length,
+        gameMode: roomData.gameMode || "1v1",
+        roomType: "code",
       });
 
-      // Notify other players in room
-      socket.to(room.id).emit("player-joined-room", {
+      // Notify other players
+      socket.to(roomData.id).emit("player-joined-room", {
         player: gameService.getPlayer(socket.id).toJSON(),
-        waitingForPlayers: room.maxPlayers - room.players.length,
-        joinType: "code",
+        waitingForPlayers: roomData.maxPlayers - roomData.players.length,
       });
 
-      // Check if room is full
-      if (room.isFull()) {
-        gameBroadcaster.broadcastRoomFull(
-          room.id,
-          `Room is full! All players can now ready up for ${
-            room.gameMode || "1v1"
-          } match.`
-        );
+      if (actualRoom?.isFull()) {
+        io.to(roomData.id).emit("room-full", {
+          message: "Room is full! Ready up for match.",
+          roomId: roomData.id,
+          timestamp: Date.now(),
+        });
       }
     } else {
       socket.emit("error", {
@@ -190,202 +257,126 @@ const handleJoinRoomByCode = async (socket, io, data) => {
   }
 };
 
+/**
+ * Handle player ready/unready toggle
+ * @param {Socket} socket - Socket.IO socket instance
+ * @param {Server} io - Socket.IO server instance
+ */
 const handlePlayerReady = async (socket, io) => {
-  const result = gameService.togglePlayerReady(socket.id);
+  try {
+    const result = gameService.togglePlayerReady(socket.id);
 
-  if (result.success) {
-    const { player, room, canStart } = result;
+    if (result.success) {
+      const { player, room, canStart } = result;
 
-    console.log(`Player ready status changed:`, {
-      playerId: player.id,
-      username: player.username,
-      isReady: player.isReady,
-      roomId: room.id,
-      playersInRoom: room.players.length,
-      allPlayersReady: canStart,
-      roomStatus: room.status,
-    });
-
-    // Log all players' ready status for debugging
-    console.log(
-      `All players ready status in room ${room.id}:`,
-      room.players.map((p) => ({
-        username: p.username,
-        isReady: p.isReady,
-      }))
-    );
-
-    // Notify all players in room
-    gameBroadcaster.broadcastPlayerReady(room.id, {
-      playerId: player.id,
-      username: player.username,
-      isReady: player.isReady,
-      allPlayersReady: canStart,
-    });
-
-    // Start 1v1 game if both players are ready
-    if (canStart) {
-      console.log(`Starting game in room ${room.id} - all players ready!`);
-      const startResult = gameService.startGame(room.id);
-      if (startResult.success) {
-        console.log(
-          `Game starting in room ${room.id} with players:`,
-          room.players.map((p) => p.username)
-        );
-
-        // Create match in database with validated user data
-        try {
-          const player1 = room.players[0];
-          const player2 = room.players[1];
-
-          const matchResult = await matchService.createMatch(
-            {
-              userId: player1.userId, // Now properly set from database
-            },
-            {
-              userId: player2.userId,
-            }
-          );
-
-          if (matchResult.success) {
-            // Start the match in database
-            await matchService.startMatch(matchResult.match._id);
-
-            // Store match ID in room for later use
-            room.matchId = matchResult.match._id;
-
-            console.log(
-              `Database match created with ID: ${matchResult.match._id}`
-            );
-          }
-        } catch (error) {
-          console.error("Error creating database match:", error);
-        }
-
-        gameBroadcaster.broadcastGameStarted(room.id, {
-          message: "1v1 Match Starting! Good luck!",
-          room: startResult.room.toJSON(),
-          matchDuration: startResult.room.settings.matchDuration,
-        });
-      }
-    }
-  } else {
-    gameBroadcaster.broadcastError(socket.id, { message: result.reason });
-  }
-};
-
-const handleGameAction = (socket, io, data) => {
-  console.log(`Received game action from ${socket.id}:`, data);
-
-  const result = gameService.handleGameAction(socket.id, data.action, data);
-
-  if (result.success) {
-    const player = result.player;
-    const room = gameService.getRoom(player.currentRoom);
-
-    console.log(
-      `Action successful for ${player.username}, broadcasting to room ${room.id}`
-    );
-
-    // Broadcast action to other player
-    socket.to(room.id).emit("opponent-action", {
-      playerId: player.id,
-      username: player.username,
-      action: result.action,
-      data: result.data,
-      timestamp: Date.now(),
-    });
-
-    // If it's a movement action or kick, broadcast game state update
-    if (result.gameState) {
-      io.to(room.id).emit("game-state-update", {
-        gameState: result.gameState,
-        action: result.action,
+      gameBroadcaster.broadcastPlayerReady(room.id, {
         playerId: player.id,
+        username: player.username,
+        isReady: player.isReady,
+        allPlayersReady: canStart,
+        room: room.toJSON(),
         timestamp: Date.now(),
       });
-    }
 
-    // If it's a goal, broadcast score update
-    if (result.action === "goal") {
-      io.to(room.id).emit("score-update", {
-        scorer: player.username,
-        newScore: result.newScore,
-        timestamp: Date.now(),
+      if (canStart) {
+        const startResult = gameService.startGame(room.id);
+        if (startResult.success) {
+          // Create match in database
+          try {
+            const [player1, player2] = room.players;
+            const matchResult = await matchService.createMatch(
+              { userId: player1.userId },
+              { userId: player2.userId }
+            );
+
+            if (matchResult.success) {
+              await matchService.startMatch(matchResult.match._id);
+              room.matchId = matchResult.match._id;
+            }
+          } catch (error) {
+            console.error("Error creating database match:", error);
+          }
+
+          gameBroadcaster.broadcastGameStarted(room.id, {
+            message: "1v1 Match Starting!",
+            room: startResult.room.toJSON(),
+            matchDuration: startResult.room.settings.matchDuration,
+          });
+        } else {
+          gameBroadcaster.broadcastError(room.id, {
+            message: `Failed to start game: ${startResult.reason}`,
+            type: "GAME_START_ERROR",
+          });
+        }
+      }
+    } else {
+      gameBroadcaster.broadcastError(socket.id, {
+        message: result.reason,
+        type: "READY_ERROR",
       });
     }
-
-    console.log(`${player.username} performed action: ${result.action}`);
-  } else {
-    console.log(`Action failed for ${socket.id}:`, result.reason);
+  } catch (error) {
+    console.error("Error in handlePlayerReady:", error);
+    socket.emit("error", {
+      message: "Failed to update ready status",
+      type: "SERVER_ERROR",
+    });
   }
 };
 
+/**
+ * Handle game end event
+ * @param {Socket} socket - Socket.IO socket instance
+ * @param {Server} io - Socket.IO server instance
+ * @param {Object} data - Game end data with final score and duration
+ */
 const handleGameEnd = async (socket, io, data) => {
   try {
     const player = gameService.getPlayer(socket.id);
-    if (!player || !player.currentRoom) {
+    if (!player?.currentRoom) {
       socket.emit("error", { message: "Player not in a room" });
       return;
     }
 
     const room = gameService.getRoom(player.currentRoom);
-    if (!room || !room.matchId) {
+    if (!room?.matchId) {
       socket.emit("error", { message: "No active match found" });
       return;
     }
 
-    // End match in database
     const matchResult = await matchService.endMatch(
       room.matchId,
-      data.finalScore, // { player1: 2, player2: 1 }
-      data.duration // Duration in seconds
+      data.finalScore,
+      data.duration
     );
-
     if (matchResult.success) {
-      console.log(`Match ${room.matchId} ended successfully`);
+      // Update user stats
+      const [player1, player2] = room.players;
+      const winner = matchResult.match.result.winner;
 
-      // Update user stats for both players
-      try {
-        const player1 = room.players[0];
-        const player2 = room.players[1];
-        const winner = matchResult.match.result.winner;
-
-        if (player1.userId) {
-          const outcome =
-            winner === player1.userId
-              ? "win"
-              : winner === "draw"
-              ? "draw"
-              : "loss";
-          await userService.updateUserMatchStats(player1.userId, { outcome });
+      const updateStats = async (player, isWinner) => {
+        if (player.userId) {
+          const outcome = isWinner
+            ? "win"
+            : winner === "draw"
+            ? "draw"
+            : "loss";
+          await userService.updateUserMatchStats(player.userId, { outcome });
         }
+      };
 
-        if (player2.userId) {
-          const outcome =
-            winner === player2.userId
-              ? "win"
-              : winner === "draw"
-              ? "draw"
-              : "loss";
-          await userService.updateUserMatchStats(player2.userId, { outcome });
-        }
+      await Promise.all([
+        updateStats(player1, winner === player1.userId),
+        updateStats(player2, winner === player2.userId),
+      ]);
 
-        console.log(`User stats updated for match ${room.matchId}`);
-      } catch (statsError) {
-        console.error("Error updating user stats:", statsError);
-      }
-
-      // Broadcast match end to all players in room
       io.to(room.id).emit("match-ended", {
         message: "Match completed!",
         finalScore: data.finalScore,
         duration: data.duration,
         matchId: room.matchId,
-        winner: matchResult.match.result.winner,
+        winner: winner,
       });
-    } else {
-      console.error("Error ending match:", matchResult.error);
     }
   } catch (error) {
     console.error("Error in handleGameEnd:", error);
@@ -393,200 +384,260 @@ const handleGameEnd = async (socket, io, data) => {
   }
 };
 
-const handlePlayerInput = (socket, io, data) => {
-  const result = gameService.handlePlayerInput(socket.id, data);
-
-  if (result.success) {
-    const player = result.player;
-    const room = gameService.getRoom(player.currentRoom);
-
-    if (room && room.gameState.isActive) {
-      // Broadcast movement to room (60fps updates handled separately)
-      io.to(room.id).emit("player-movement", {
-        playerId: player.id,
-        input: data,
-        timestamp: Date.now(),
+/**
+ * Handle goal scored event
+ * @param {Socket} socket - Socket.IO socket instance
+ * @param {Server} io - Socket.IO server instance
+ * @param {Object} data - Goal data
+ */
+const handleGoalScored = (socket, io, data) => {
+  try {
+    const result = gameService.handleGameAction(socket.id, "goal", data);
+    if (!result.success) {
+      socket.emit("error", {
+        message: result.reason || "Failed to process goal",
+        type: "GOAL_ERROR",
       });
     }
+  } catch (error) {
+    console.error("Error in handleGoalScored:", error);
+    socket.emit("error", {
+      message: "Failed to process goal",
+      type: "SERVER_ERROR",
+    });
   }
 };
 
-const handlePlayerMovement = (socket, action, data) => {
-  gameService.handlePlayerInput(socket.id, {
-    action: action,
-    pressed: data.pressed || true,
-  });
+/**
+ * Handle game state update event
+ * @param {Socket} socket - Socket.IO socket instance
+ * @param {Server} io - Socket.IO server instance
+ * @param {Object} data - Game state data
+ */
+const handleGameStateUpdate = (socket, io, data) => {
+  try {
+    const result = gameService.handleGameAction(
+      socket.id,
+      "game_state_update",
+      data
+    );
+    if (!result.success) {
+      socket.emit("error", {
+        message: result.reason || "Failed to update game state",
+        type: "GAME_STATE_ERROR",
+      });
+    }
+  } catch (error) {
+    console.error("Error in handleGameStateUpdate:", error);
+    socket.emit("error", {
+      message: "Failed to update game state",
+      type: "SERVER_ERROR",
+    });
+  }
 };
 
-const handlePlayerKick = (socket, io, data) => {
-  const result = gameService.handlePlayerInput(socket.id, {
-    action: "kick",
-    pressed: data.pressed || true,
-  });
+/**
+ * Handle player input events for real-time gameplay
+ * @param {Socket} socket - Socket.IO socket instance
+ * @param {Server} io - Socket.IO server instance
+ * @param {Object} data - Input data
+ */
+const handlePlayerInput = (socket, io, data) => {
+  try {
+    const player = gameService.getPlayer(socket.id);
+    if (!player || !player.currentRoom) {
+      return;
+    }
 
-  if (result.success && result.kickResult) {
-    const player = result.player;
     const room = gameService.getRoom(player.currentRoom);
+    if (!room || !room.gameState.isActive) {
+      return;
+    }
 
-    // Broadcast kick action to room
-    io.to(room.id).emit("player-kicked-ball", {
+    // Relay input to other players in the room for frontend physics
+    socket.to(room.id).emit("player-input", {
       playerId: player.id,
       username: player.username,
-      kickPower: result.kickResult.kickPower,
-      direction: result.kickResult.direction,
+      position: player.position,
+      action: data.action,
+      input: data,
       timestamp: Date.now(),
     });
+  } catch (error) {
+    console.error("Error in handlePlayerInput:", error);
   }
 };
 
+/**
+ * Handle player leaving room
+ * @param {Socket} socket - Socket.IO socket instance
+ * @param {Server} io - Socket.IO server instance
+ */
 const handleLeaveRoom = (socket, io) => {
-  const result = gameService.leaveRoom(socket.id);
+  try {
+    const result = gameService.leaveRoom(socket.id);
+    if (result.success) {
+      const { room, player } = result;
+      socket.leave(room.id);
+      socket.emit("left-room", { roomId: room.id });
 
-  if (result.success) {
-    const { room, player } = result;
-
-    socket.leave(room.id);
-    socket.emit("left-room", { roomId: room.id });
-
-    // Notify opponent
-    socket.to(room.id).emit("player-left-room", {
-      playerId: player.id,
-      username: player.username,
-      remainingPlayers: room.players.length,
-      message: `${player.username} left the match`,
+      gameBroadcaster.broadcastPlayerLeft(room.id, {
+        playerId: player.id,
+        username: player.username,
+        remainingPlayers: room.players.length,
+        message: `${player.username} left the match`,
+      });
+    } else {
+      socket.emit("error", {
+        message: result.reason || "Failed to leave room",
+        type: "ROOM_ERROR",
+      });
+    }
+  } catch (error) {
+    console.error("Error in handleLeaveRoom:", error);
+    socket.emit("error", {
+      message: "Failed to leave room",
+      type: "SERVER_ERROR",
     });
-
-    console.log(`${player.username} left room ${room.id}`);
   }
 };
 
+/**
+ * Handle player disconnection
+ * @param {Socket} socket - Socket.IO socket instance
+ * @param {Server} io - Socket.IO server instance
+ */
 const handleDisconnect = (socket, io) => {
   const player = gameService.removePlayer(socket.id);
-
-  if (player && player.currentRoom) {
-    // Notify opponent about disconnection
-    socket.to(player.currentRoom).emit("player-left-room", {
+  if (player?.currentRoom) {
+    gameBroadcaster.broadcastPlayerLeft(player.currentRoom, {
       playerId: player.id,
       username: player.username,
       message: `${player.username} disconnected`,
       reason: "disconnect",
     });
   }
-
-  console.log(`Player disconnected: ${socket.id}`);
 };
 
+/**
+ * Handle rematch request
+ * @param {Socket} socket - Socket.IO socket instance
+ * @param {Server} io - Socket.IO server instance
+ */
+const handleRequestRematch = (socket, io) => {
+  try {
+    const result = gameService.requestRematch(socket.id);
+    if (result.success) {
+      if (result.bothRequested) {
+        const room = gameService.getRoom(result.room.id);
+        if (room?.status === "waiting") {
+          gameBroadcaster.broadcastRematchConfirmed(
+            result.room.id,
+            room.toJSON()
+          );
+        }
+      } else {
+        gameBroadcaster.broadcastRematchRequest(
+          result.room.id,
+          result.player,
+          result.rematchState
+        );
+      }
+    } else {
+      socket.emit("error", {
+        message: result.reason,
+        type: "REMATCH_ERROR",
+      });
+    }
+  } catch (error) {
+    console.error("Error in handleRequestRematch:", error);
+    socket.emit("error", {
+      message: "Failed to request rematch",
+      type: "SERVER_ERROR",
+    });
+  }
+};
+
+/**
+ * Handle rematch decline
+ * @param {Socket} socket - Socket.IO socket instance
+ * @param {Server} io - Socket.IO server instance
+ */
+const handleDeclineRematch = (socket, io) => {
+  try {
+    const result = gameService.declineRematch(socket.id);
+    if (result.success) {
+      gameBroadcaster.broadcastRematchDeclined(result.room.id, result.player);
+    } else {
+      socket.emit("error", {
+        message: result.reason,
+        type: "REMATCH_ERROR",
+      });
+    }
+  } catch (error) {
+    console.error("Error in handleDeclineRematch:", error);
+    socket.emit("error", {
+      message: "Failed to decline rematch",
+      type: "SERVER_ERROR",
+    });
+  }
+};
+
+/**
+ * Initialize Socket.IO server with event handlers
+ * @param {Server} server - HTTP server instance
+ * @returns {Server} Socket.IO server instance
+ */
 function initializeSocket(server) {
   const io = socketIo(server, {
     cors: {
       origin: "*",
       methods: ["GET", "POST"],
     },
-    // Enhanced Socket.IO configuration for better performance
     pingTimeout: 60000,
     pingInterval: 25000,
     upgradeTimeout: 10000,
     allowUpgrades: true,
-    perMessageDeflate: false, // Disable compression for lower latency
+    perMessageDeflate: false,
     httpCompression: false,
   });
 
-  // Connect services to Socket.IO for broadcasting
+  // Initialize services with Socket.IO instance
   gameService.setSocketIO(io);
   gameBroadcaster.setSocketIO(io);
 
-  // Performance monitoring
   let connectionCount = 0;
 
   io.on("connection", (socket) => {
     connectionCount++;
-    console.log(`Player connected: ${socket.id} (Total: ${connectionCount})`);
 
-    // Enhanced welcome with server info
-    gameBroadcaster.broadcastWelcome(socket.id, {
-      message: "Welcome to MetaHead Arena! 1v1 Football Game",
+    // Send welcome message with player info
+    socket.emit("welcome", {
+      message: "Welcome to MetaHead Arena!",
       playerId: socket.id,
       serverTime: Date.now(),
-      gameVersion: "1.0.0",
-      features: ["realtime-physics", "60fps-updates", "anti-cheat"],
     });
 
-    // Input rate limiting per socket
-    let inputCount = 0;
-    let lastInputReset = Date.now();
-
-    const checkInputRate = () => {
-      const now = Date.now();
-      if (now - lastInputReset > 1000) {
-        // Reset every second
-        inputCount = 0;
-        lastInputReset = now;
-      }
-
-      inputCount++;
-      if (inputCount > 120) {
-        // Max 120 inputs per second
-        socket.emit("error", {
-          message: "Input rate limit exceeded",
-          type: "RATE_LIMIT",
-        });
-        return false;
-      }
-      return true;
-    };
-
-    // Enhanced event handlers with validation
-    socket.on("join-game", async (data) => {
-      try {
-        if (!data || !data.walletAddress) {
-          socket.emit("error", {
-            message: "Wallet address is required",
-            type: "VALIDATION_ERROR",
-          });
-          return;
-        }
-        await handlePlayerJoin(socket, io, data);
-      } catch (error) {
-        console.error(`Error in join-game:`, error);
-        socket.emit("error", {
-          message: "Internal server error",
-          type: "SERVER_ERROR",
-        });
-      }
-    });
-
-    socket.on("find-match", () => {
-      try {
-        handleFindMatch(socket, io);
-      } catch (error) {
-        console.error(`Error in find-match:`, error);
-        socket.emit("error", {
-          message: "Matchmaking error",
-          type: "SERVER_ERROR",
-        });
-      }
-    });
-
-    // Join specific room by ID
-    socket.on("join-room-by-code", (data) => {
-      try {
-        handleJoinRoomByCode(socket, io, data);
-      } catch (error) {
-        console.error(`Error in join-specific-room:`, error);
-        socket.emit("error", {
-          message: "Failed to join specific room",
-          type: "SERVER_ERROR",
-        });
-      }
-    });
-
+    // === Core Game Event Handlers ===
+    socket.on("join-game", (data) => handlePlayerJoin(socket, io, data));
+    socket.on("find-match", () => handleFindMatch(socket, io));
+    socket.on("create-room", () => handleCreateRoom(socket, io));
+    socket.on("join-room-by-code", (data) =>
+      handleJoinRoomByCode(socket, io, data)
+    );
     socket.on("player-ready", () => handlePlayerReady(socket, io));
-    socket.on("ready", () => handlePlayerReady(socket, io));
-
-    // Game end event
     socket.on("game-end", (data) => handleGameEnd(socket, io, data));
+    socket.on("leave-room", () => handleLeaveRoom(socket, io));
+    socket.on("request-rematch", () => handleRequestRematch(socket, io));
+    socket.on("decline-rematch", () => handleDeclineRematch(socket, io));
 
-    // Enhanced input handling with rate limiting
+    // === Gameplay Event Handlers ===
+    socket.on("goal-scored", (data) => handleGoalScored(socket, io, data));
+    socket.on("game-state-update", (data) =>
+      handleGameStateUpdate(socket, io, data)
+    );
+
+    // === Input relay for frontend physics ===
     const inputEvents = [
       "move-left",
       "move-right",
@@ -596,66 +647,25 @@ function initializeSocket(server) {
     ];
     inputEvents.forEach((eventName) => {
       socket.on(eventName, (data) => {
-        if (!checkInputRate()) return;
-
         const actionName = eventName === "stop-move" ? "stop" : eventName;
-        handlePlayerMovement(socket, actionName, data || { pressed: true });
+        handlePlayerInput(socket, io, {
+          action: actionName,
+          pressed: data?.pressed ?? true,
+          ...data,
+        });
       });
     });
 
-    // Generic player input handler
     socket.on("player-input", (data) => {
-      if (!checkInputRate()) return;
-      if (!data || !data.action) {
-        socket.emit("error", {
-          message: "Invalid input data",
-          type: "VALIDATION_ERROR",
-        });
-        return;
-      }
       handlePlayerInput(socket, io, data);
     });
 
-    // Room management
-    socket.on("leave-room", () => handleLeaveRoom(socket, io));
-
-    // Connection management with cleanup
+    // === Connection Management ===
     socket.on("disconnect", (reason) => {
       connectionCount--;
-      console.log(
-        `Player disconnected: ${socket.id} (Reason: ${reason}, Total: ${connectionCount})`
-      );
       handleDisconnect(socket, io);
     });
-
-    socket.on("error", (error) => {
-      console.error(`Socket error from ${socket.id}:`, error);
-    });
-
-    // Heartbeat for connection quality monitoring
-    socket.on("ping", (callback) => {
-      if (typeof callback === "function") {
-        callback(Date.now());
-      }
-    });
   });
-
-  // Performance monitoring (logs only)
-  setInterval(() => {
-    const stats = {
-      connections: connectionCount,
-      rooms: gameService.gameRooms.size,
-      activeGames: Array.from(gameService.gameRooms.values()).filter(
-        (room) => room.status === "playing"
-      ).length,
-      uptime: Math.floor(process.uptime()),
-      memory: Math.floor(process.memoryUsage().heapUsed / 1024 / 1024),
-    };
-
-    console.log(
-      `Server Stats: ${stats.connections} players, ${stats.rooms} rooms, ${stats.activeGames} active games, ${stats.memory}MB RAM`
-    );
-  }, 60000); // Every 60 seconds
 
   return io;
 }

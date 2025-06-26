@@ -1,5 +1,15 @@
 const mongoose = require("mongoose");
 
+/**
+ * NFT Model - Game Character NFTs
+ *
+ * Purpose: Stores NFT metadata and game power attributes
+ * Scope: MongoDB database, permanent storage
+ * Lifespan: Permanent NFT records
+ *
+ * Features: Limited collection (0-9), power attributes for gameplay,
+ *          IPFS metadata, game statistics tracking
+ */
 const nftSchema = new mongoose.Schema(
   {
     // Token Identity (0-9 limited collection)
@@ -61,6 +71,8 @@ const nftSchema = new mongoose.Schema(
         default: function () {
           return this.power.jump + this.power.superkick + this.power.speed;
         },
+        min: 3,
+        max: 30,
       },
     },
 
@@ -78,6 +90,7 @@ const nftSchema = new mongoose.Schema(
       },
       blockNumber: {
         type: Number,
+        min: 0,
       },
       mintedAt: {
         type: Date,
@@ -90,21 +103,25 @@ const nftSchema = new mongoose.Schema(
       type: String,
       maxlength: 200,
       default: "",
+      trim: true,
     },
 
-    // Stats for future features
+    // Game Statistics
     stats: {
       gamesPlayed: {
         type: Number,
         default: 0,
+        min: 0,
       },
       goalsScored: {
         type: Number,
         default: 0,
+        min: 0,
       },
       matchesWon: {
         type: Number,
         default: 0,
+        min: 0,
       },
     },
   },
@@ -114,7 +131,7 @@ const nftSchema = new mongoose.Schema(
   }
 );
 
-// Index for efficient queries
+// Performance indexes
 nftSchema.index({ tokenId: 1 });
 nftSchema.index({ "power.totalPower": -1 });
 

@@ -32,50 +32,47 @@ const options = {
       schemas: {
         User: {
           type: "object",
-          required: ["walletAddress"],
           properties: {
             _id: {
               type: "string",
-              description: "The auto-generated id of the user",
+              description: "User ID",
             },
             walletAddress: {
               type: "string",
-              description: "User wallet address",
+              description: "Web3 wallet address",
+              example: "0x742d35Cc6634C0532925a3b8D",
             },
-            username: {
-              type: "string",
-              description: "User display name",
+            nfts: {
+              type: "array",
+              items: {
+                $ref: "#/components/schemas/NFT",
+              },
+              description: "User's NFT collection",
             },
-            level: {
-              type: "number",
-              default: 1,
-              description: "User level",
-            },
-            experience: {
-              type: "number",
-              default: 0,
-              description: "User experience points",
-            },
-            matchStats: {
+            gameStats: {
               type: "object",
               properties: {
-                wins: { type: "number", default: 0 },
-                losses: { type: "number", default: 0 },
-                draws: { type: "number", default: 0 },
-                totalMatches: { type: "number", default: 0 },
-                goals: { type: "number", default: 0 },
-                saves: { type: "number", default: 0 },
+                wins: { type: "number" },
+                losses: { type: "number" },
+                draws: { type: "number" },
+                totalMatches: { type: "number" },
+                matchHistory: {
+                  type: "array",
+                  items: { type: "string" },
+                },
               },
             },
-            createdAt: {
-              type: "string",
-              format: "date-time",
-              description: "User creation timestamp",
+            chests: {
+              type: "object",
+              properties: {
+                common: { type: "number" },
+                rare: { type: "number" },
+                legendary: { type: "number" },
+              },
             },
-            updatedAt: {
+            joinedAt: {
               type: "string",
               format: "date-time",
-              description: "User last update timestamp",
             },
           },
         },
@@ -129,9 +126,9 @@ const options = {
               type: "string",
               description: "User database id",
             },
-            username: {
+            walletAddress: {
               type: "string",
-              description: "Player username",
+              description: "Player wallet address",
             },
             position: {
               type: "object",

@@ -4,6 +4,12 @@ const nftController = require("../controllers/nftController");
 const router = express.Router();
 
 /**
+ * @fileoverview NFT Management Routes
+ * @description RESTful API routes for NFT collection and gameplay modifier management
+ * @module routes/nft
+ */
+
+/**
  * @swagger
  * /api/nfts:
  *   get:
@@ -36,6 +42,10 @@ const router = express.Router();
  *                   gameModifiers:
  *                     type: object
  */
+/**
+ * GET /api/nfts
+ * Retrieve all available NFTs in the collection
+ */
 router.get("/", nftController.getAllNFTs);
 
 /**
@@ -61,6 +71,10 @@ router.get("/", nftController.getAllNFTs);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
+/**
+ * GET /api/nfts/:nftId
+ * Retrieve specific NFT details by database ID
+ */
 router.get("/:nftId", nftController.getNFTById);
 
 /**
@@ -85,6 +99,10 @@ router.get("/:nftId", nftController.getNFTById);
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ */
+/**
+ * GET /api/nfts/token/:tokenId
+ * Retrieve NFT details by blockchain token ID (0-9)
  */
 router.get("/token/:tokenId", nftController.getNFTByTokenId);
 
@@ -125,6 +143,10 @@ router.get("/token/:tokenId", nftController.getNFTByTokenId);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
+/**
+ * GET /api/nfts/:nftId/modifiers
+ * Retrieve gameplay modifiers for specific NFT
+ */
 router.get("/:nftId/modifiers", nftController.getNFTGameModifiers);
 
 /**
@@ -156,6 +178,10 @@ router.get("/:nftId/modifiers", nftController.getNFTGameModifiers);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
+/**
+ * GET /api/nfts/user/:userId
+ * Retrieve all NFTs owned by specific user
+ */
 router.get("/user/:userId", nftController.getUserNFTs);
 
 /**
@@ -186,6 +212,10 @@ router.get("/user/:userId", nftController.getUserNFTs);
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ */
+/**
+ * GET /api/nfts/user/:userId/:nftId
+ * Retrieve specific NFT from user's collection
  */
 router.get("/user/:userId/:nftId", nftController.getUserNFT);
 

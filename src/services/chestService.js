@@ -1,5 +1,15 @@
 const User = require("../models/user");
 
+/**
+ * @fileoverview Chest Management Service
+ * @description Service for managing user chest inventory and reward distribution
+ * @module services/chestService
+ */
+
+/**
+ * Chest Service - Handles chest inventory and reward system
+ * @class ChestService
+ */
 class ChestService {
   // Get user's chest counts
   static async getUserChests(walletAddress) {

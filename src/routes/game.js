@@ -3,6 +3,12 @@ const router = express.Router();
 const gameController = require("../controllers/gameController");
 
 /**
+ * @fileoverview Game Room Management Routes
+ * @description RESTful API routes for real-time game room operations and statistics
+ * @module routes/game
+ */
+
+/**
  * @swagger
  * /api/game/rooms:
  *   get:
@@ -17,6 +23,10 @@ const gameController = require("../controllers/gameController");
  *               type: array
  *               items:
  *                 $ref: '#/components/schemas/GameRoom'
+ */
+/**
+ * GET /api/game/rooms
+ * Retrieve all active game rooms for matchmaking
  */
 router.get("/rooms", gameController.getRooms);
 
@@ -46,6 +56,10 @@ router.get("/rooms", gameController.getRooms);
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ */
+/**
+ * GET /api/game/rooms/:id
+ * Retrieve specific game room details by room ID
  */
 router.get("/rooms/:id", gameController.getRoom);
 
@@ -85,6 +99,10 @@ router.get("/rooms/:id", gameController.getRoom);
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ */
+/**
+ * POST /api/game/rooms/create
+ * Create a new game room for 1v1 matches
  */
 router.post("/rooms/create", gameController.createRoom);
 
@@ -148,6 +166,10 @@ router.post("/rooms/create", gameController.createRoom);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
+/**
+ * GET /api/game/rooms/:id/code
+ * Get shareable room code for inviting players
+ */
 router.get("/rooms/:id/code", gameController.getRoomCode);
 
 /**
@@ -176,6 +198,10 @@ router.get("/rooms/:id/code", gameController.getRoomCode);
  *                 playingPlayers:
  *                   type: number
  *                   description: Number of players currently in game
+ */
+/**
+ * GET /api/game/stats
+ * Retrieve current game server statistics and player counts
  */
 router.get("/stats", gameController.getStats);
 

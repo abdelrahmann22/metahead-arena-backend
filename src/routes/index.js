@@ -7,7 +7,16 @@ const chestRoutes = require("./chest");
 
 const router = express.Router();
 
-// API Documentation
+/**
+ * @fileoverview Main API Router
+ * @description Central router configuration for Head Ball Real-Time Game API
+ * @module routes/index
+ */
+
+/**
+ * GET /api
+ * API documentation and endpoint overview
+ */
 router.get("/", (req, res) => {
   res.json({
     message: "🏈 Head Ball Real-Time Game API",
@@ -34,7 +43,7 @@ router.get("/", (req, res) => {
   });
 });
 
-// Mount routes
+// Mount API route modules
 router.use("/game", gameRoutes);
 router.use("/users", userRoutes);
 router.use("/nfts", nftRoutes);

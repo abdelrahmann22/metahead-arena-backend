@@ -1,11 +1,21 @@
 const User = require("../models/user");
 const NFT = require("../models/nft");
 
+/**
+ * @fileoverview User Management Service
+ * @description Service for managing Web3 user accounts, authentication, and NFT integration
+ * @module services/userService
+ */
+
+/**
+ * User Service - Handles Web3 user management and NFT operations
+ * @class UserService
+ */
 class UserService {
   /**
    * Create user from wallet address (wagmi integration)
    */
-  async createUserFromWallet(walletAddress, username = null) {
+  async createUserFromWallet(walletAddress) {
     try {
       // Check if user already exists
       const existingUser = await User.findOne({
@@ -18,7 +28,6 @@ class UserService {
       // Create new user
       const newUser = new User({
         walletAddress: walletAddress.toLowerCase(),
-        username: username || `Player_${walletAddress.slice(-6)}`,
       });
 
       await newUser.save();

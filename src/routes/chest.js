@@ -1,6 +1,12 @@
 const express = require("express");
 const router = express.Router();
-const ChestController = require("../controllers/chestController");
+const chestController = require("../controllers/chestController");
+
+/**
+ * @fileoverview Chest Management Routes
+ * @description RESTful API routes for managing user chests and rewards
+ * @module routes/chest
+ */
 
 /**
  * @swagger
@@ -42,7 +48,11 @@ const ChestController = require("../controllers/chestController");
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get("/:walletAddress", ChestController.getUserChests);
+/**
+ * GET /api/chests/:walletAddress
+ * Retrieve user's chest inventory counts by wallet address
+ */
+router.get("/:walletAddress", chestController.getUserChests);
 
 /**
  * @swagger
@@ -95,7 +105,11 @@ router.get("/:walletAddress", ChestController.getUserChests);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post("/:walletAddress/add", ChestController.addChests);
+/**
+ * POST /api/chests/:walletAddress/add
+ * Add chests to user's inventory (reward system)
+ */
+router.post("/:walletAddress/add", chestController.addChests);
 
 /**
  * @swagger
@@ -162,6 +176,10 @@ router.post("/:walletAddress/add", ChestController.addChests);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post("/:walletAddress/open", ChestController.openChests);
+/**
+ * POST /api/chests/:walletAddress/open
+ * Open chests and receive rewards (consumes chest inventory)
+ */
+router.post("/:walletAddress/open", chestController.openChests);
 
 module.exports = router;

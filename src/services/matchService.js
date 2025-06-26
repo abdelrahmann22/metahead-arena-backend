@@ -2,6 +2,16 @@ const Match = require("../models/match");
 const User = require("../models/user");
 const userService = require("./userService");
 
+/**
+ * @fileoverview Match Management Service
+ * @description Service for managing game matches, results, and match history
+ * @module services/matchService
+ */
+
+/**
+ * Match Service - Handles match creation, management, and result processing
+ * @class MatchService
+ */
 class MatchService {
   /**
    * Create new match (for Socket.IO)
@@ -143,9 +153,9 @@ class MatchService {
   async getMatchById(matchId) {
     try {
       const match = await Match.findById(matchId)
-        .populate("players.user", "username walletAddress")
+        .populate("players.user", "walletAddress")
         .populate("players.nft", "name power")
-        .populate("result.winner", "username walletAddress");
+        .populate("result.winner", "walletAddress");
 
       if (!match) {
         return { success: false, error: "Match not found" };
@@ -166,12 +176,12 @@ class MatchService {
       const skip = (page - 1) * limit;
 
       const matches = await Match.find({ "players.user": userId })
+        .populate("players.user", "walletAddress")
+        .populate("players.nft", "name power")
+        .populate("result.winner", "walletAddress")
         .sort({ startedAt: -1 })
         .skip(skip)
-        .limit(limit)
-        .populate("players.user", "username walletAddress")
-        .populate("players.nft", "name power")
-        .populate("result.winner", "username walletAddress");
+        .limit(limit);
 
       const totalMatches = await Match.countDocuments({
         "players.user": userId,
@@ -202,9 +212,9 @@ class MatchService {
         _id: matchId,
         "players.user": userId,
       })
-        .populate("players.user", "username walletAddress")
+        .populate("players.user", "walletAddress")
         .populate("players.nft", "name power")
-        .populate("result.winner", "username walletAddress");
+        .populate("result.winner", "walletAddress");
 
       if (!match) {
         return {
@@ -246,7 +256,9 @@ class MatchService {
           goals: opponentPlayer ? opponentPlayer.goals : 0,
           position: opponentPlayer ? opponentPlayer.position : null,
           nft: opponentPlayer ? opponentPlayer.nft : null,
-          username: opponentPlayer ? opponentPlayer.user.username : "Unknown",
+          walletAddress: opponentPlayer
+            ? opponentPlayer.user.walletAddress
+            : "Unknown",
         },
       };
 

@@ -2,6 +2,10 @@ const gameService = require("../services/gameService");
 
 /**
  * Get available game rooms
+ * @route GET /api/game/rooms
+ * @query {number} page - Page number for pagination (default: 1)
+ * @query {number} limit - Number of rooms per page (default: 10)
+ * @query {string} gameMode - Filter by game mode (optional)
  */
 const getRooms = async (req, res) => {
   try {
@@ -35,6 +39,8 @@ const getRooms = async (req, res) => {
 
 /**
  * Create a new game room
+ * @route POST /api/game/rooms
+ * @body {object} roomData - Room configuration data
  */
 const createRoom = async (req, res) => {
   try {
@@ -57,6 +63,7 @@ const createRoom = async (req, res) => {
 
 /**
  * Get live game statistics
+ * @route GET /api/game/stats
  */
 const getStats = async (req, res) => {
   try {
@@ -78,6 +85,8 @@ const getStats = async (req, res) => {
 
 /**
  * Get specific room details
+ * @route GET /api/game/rooms/:id
+ * @param {string} id - Room ID
  */
 const getRoom = async (req, res) => {
   try {
@@ -107,6 +116,8 @@ const getRoom = async (req, res) => {
 
 /**
  * Get room code for sharing
+ * @route GET /api/game/rooms/:id/code
+ * @param {string} id - Room ID
  */
 const getRoomCode = async (req, res) => {
   try {

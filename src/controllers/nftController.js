@@ -2,6 +2,7 @@ const nftService = require("../services/nftService");
 
 /**
  * Get all NFTs
+ * @route GET /api/nfts
  */
 const getAllNFTs = async (req, res) => {
   try {
@@ -30,6 +31,8 @@ const getAllNFTs = async (req, res) => {
 
 /**
  * Get NFT by ID
+ * @route GET /api/nfts/:nftId
+ * @param {string} nftId - NFT ID
  */
 const getNFTById = async (req, res) => {
   try {
@@ -67,6 +70,8 @@ const getNFTById = async (req, res) => {
 
 /**
  * Get NFT by token ID
+ * @route GET /api/nfts/token/:tokenId
+ * @param {number} tokenId - Token ID (0-9)
  */
 const getNFTByTokenId = async (req, res) => {
   try {
@@ -112,6 +117,8 @@ const getNFTByTokenId = async (req, res) => {
 
 /**
  * Get user's NFTs
+ * @route GET /api/nfts/user/:userId
+ * @param {string} userId - User ID
  */
 const getUserNFTs = async (req, res) => {
   try {
@@ -149,6 +156,9 @@ const getUserNFTs = async (req, res) => {
 
 /**
  * Get specific user NFT
+ * @route GET /api/nfts/user/:userId/nft/:nftId
+ * @param {string} userId - User ID
+ * @param {string} nftId - NFT ID
  */
 const getUserNFT = async (req, res) => {
   try {
@@ -186,6 +196,8 @@ const getUserNFT = async (req, res) => {
 
 /**
  * Get NFT game modifiers (for gameplay)
+ * @route GET /api/nfts/:nftId/modifiers
+ * @param {string} nftId - NFT ID
  */
 const getNFTGameModifiers = async (req, res) => {
   try {

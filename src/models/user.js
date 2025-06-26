@@ -18,23 +18,10 @@ const userSchema = new mongoose.Schema(
     walletAddress: {
       type: String,
       required: true,
-      unique: true,
+      unique: true, // This automatically creates a unique index
       lowercase: true,
       trim: true,
       match: /^0x[a-fA-F0-9]{40}$/, // Ethereum address format
-    },
-
-    // Optional Display Info
-    username: {
-      type: String,
-      trim: true,
-      minlength: 3,
-      maxlength: 20,
-      match: /^[a-zA-Z0-9_]+$/,
-      default: function () {
-        // Generate default username from wallet address
-        return `Player_${this.walletAddress.slice(-6)}`;
-      },
     },
 
     // NFT Collection (References)
@@ -59,18 +46,22 @@ const userSchema = new mongoose.Schema(
       wins: {
         type: Number,
         default: 0,
+        min: 0,
       },
       losses: {
         type: Number,
         default: 0,
+        min: 0,
       },
       draws: {
         type: Number,
         default: 0,
+        min: 0,
       },
       totalMatches: {
         type: Number,
         default: 0,
+        min: 0,
       },
     },
 
@@ -105,7 +96,6 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-// Indexes for performance
-userSchema.index({ walletAddress: 1 }, { unique: true });
+// Note: walletAddress already has unique: true, so no need for explicit index
 
 module.exports = mongoose.model("User", userSchema);

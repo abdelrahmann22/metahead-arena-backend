@@ -4,6 +4,12 @@ const userController = require("../controllers/userController");
 const router = express.Router();
 
 /**
+ * @fileoverview User Management Routes
+ * @description RESTful API routes for Web3 user authentication and profile management
+ * @module routes/user
+ */
+
+/**
  * @swagger
  * /api/users/auth:
  *   post:
@@ -20,10 +26,8 @@ const router = express.Router();
  *             properties:
  *               walletAddress:
  *                 type: string
- *                 description: User's wallet address
- *               username:
- *                 type: string
- *                 description: User's display name
+ *                 description: Web3 wallet address
+ *                 example: "0x742d35Cc6634C0532925a3b8D"
  *     responses:
  *       200:
  *         description: User successfully authenticated
@@ -37,6 +41,10 @@ const router = express.Router();
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ */
+/**
+ * POST /api/users/auth
+ * Authenticate user with Web3 wallet address (create if new, login if exists)
  */
 router.post("/auth", userController.createOrLoginUser);
 
@@ -67,6 +75,10 @@ router.post("/auth", userController.createOrLoginUser);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
+/**
+ * GET /api/users/wallet/:walletAddress
+ * Retrieve user profile by Web3 wallet address
+ */
 router.get("/wallet/:walletAddress", userController.getUserByWallet);
 
 /**
@@ -95,6 +107,10 @@ router.get("/wallet/:walletAddress", userController.getUserByWallet);
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ */
+/**
+ * GET /api/users/profile/:userId
+ * Retrieve user profile with game statistics by database ID
  */
 router.get("/profile/:userId", userController.getUserProfile);
 

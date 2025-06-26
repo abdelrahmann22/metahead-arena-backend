@@ -2,6 +2,8 @@ const matchService = require("../services/matchService");
 
 /**
  * Get match by ID
+ * @route GET /api/matches/:matchId
+ * @param {string} matchId - Match ID
  */
 const getMatchById = async (req, res) => {
   try {
@@ -39,6 +41,10 @@ const getMatchById = async (req, res) => {
 
 /**
  * Get user match history
+ * @route GET /api/matches/user/:userId
+ * @param {string} userId - User ID
+ * @query {number} limit - Number of matches per page (default: 10, max: 100)
+ * @query {number} page - Page number (default: 1)
  */
 const getUserMatchHistory = async (req, res) => {
   try {
@@ -99,6 +105,9 @@ const getUserMatchHistory = async (req, res) => {
 
 /**
  * Get specific match for a specific user
+ * @route GET /api/matches/user/:userId/match/:matchId
+ * @param {string} userId - User ID
+ * @param {string} matchId - Match ID
  */
 const getUserSpecificMatch = async (req, res) => {
   try {

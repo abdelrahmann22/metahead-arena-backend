@@ -4,19 +4,25 @@ const Player = require("../models/player");
 const userService = require("./userService");
 const matchService = require("./matchService");
 const roomManagerService = require("./roomManagerService");
-const physicsEngine = require("./physicsEngine");
 const gameBroadcaster = require("./gameBroadcaster");
 
+/**
+ * @fileoverview Main Game Service
+ * @description Central service for managing game flow, player connections, and coordinating with room manager
+ * @module services/gameService
+ */
+
+/**
+ * Game Service - Manages game flow, player connections, and coordinates with room manager
+ * @class GameService
+ */
 class GameService {
   constructor() {
-    this.connectedPlayers = new Map();
-    this.gameLoops = new Map();
+    this.connectedPlayers = new Map(); // socketId -> Player
+    this.gameLoops = new Map(); // roomId -> intervalId
+    this.rematchTimers = new Map(); // roomId -> timeoutId
+    this.io = null;
     this.startGameLoopCoordinator();
-  }
-
-  // Delegate to UserService
-  async updateUserMatchStats(userId, matchResult) {
-    return await userService.updateUserMatchStats(userId, matchResult);
   }
 
   // Delegate to RoomManagerService
@@ -36,20 +42,8 @@ class GameService {
     return roomManagerService.getRoom(roomId);
   }
 
-  deleteRoom(roomId) {
-    return roomManagerService.deleteRoom(roomId);
-  }
-
-  findAvailableRoom() {
-    return roomManagerService.findAvailableRoom();
-  }
-
   async getAvailableRooms(options) {
     return await roomManagerService.getAvailableRooms(options);
-  }
-
-  async getAllRooms() {
-    return await roomManagerService.getAllRooms();
   }
 
   findMatch(socketId) {
@@ -67,16 +61,6 @@ class GameService {
     return await roomManagerService.joinRoomByCode(player, roomCode);
   }
 
-  async joinSpecificRoom(playerId, roomId) {
-    const player = this.getPlayer(playerId);
-    return await roomManagerService.joinSpecificRoom(player, roomId);
-  }
-
-  async leaveSpecificRoom(playerId, roomId) {
-    const player = this.getPlayer(playerId);
-    return await roomManagerService.leaveSpecificRoom(player, roomId);
-  }
-
   togglePlayerReady(socketId) {
     const player = this.getPlayer(socketId);
     return roomManagerService.togglePlayerReady(player);
@@ -85,29 +69,18 @@ class GameService {
   startGame(roomId) {
     const result = roomManagerService.startGame(roomId);
     if (result.success) {
-      // Start the physics loop for this roomf
-      this.startRoomGameWithLoop(result.room);
+      console.log(`Game started in room ${result.room.id}`);
     }
-    return result;
-  }
-
-  endGame(roomId, winnerId = null) {
-    // Stop the game loop first
-    this.stopGameLoop(roomId);
-
-    // End the game in room manager
-    const result = roomManagerService.endGame(roomId, winnerId);
-
     return result;
   }
 
   // Player Management (kept in GameService as it's Socket.IO specific)
-  createPlayer(socketId, username, userId = null) {
+  createPlayer(socketId, walletAddress, userId = null) {
     if (this.connectedPlayers.has(socketId)) {
       return { success: false, reason: "Player already exists" };
     }
 
-    const player = new Player(socketId, username, userId);
+    const player = new Player(socketId, walletAddress, userId);
     this.connectedPlayers.set(socketId, player);
 
     return { success: true, player: player };
@@ -134,13 +107,7 @@ class GameService {
     return player;
   }
 
-  async getAllPlayers() {
-    return Array.from(this.connectedPlayers.values()).map((player) =>
-      player.toJSON()
-    );
-  }
-
-  // Game Action Handling (coordinates physics and broadcasting)
+  // Game Action Handling (coordinates state updates and broadcasting)
   handleGameAction(socketId, action, data = {}) {
     const player = this.getPlayer(socketId);
     if (!player || !player.currentRoom) {
@@ -154,16 +121,17 @@ class GameService {
 
     // Handle action based on type
     switch (action) {
-      case "kick":
-        return this.handlePlayerKick(socketId, data);
-      case "move":
-        return this.handlePlayerInput(socketId, data);
+      case "goal":
+        return this.handleGoal(socketId, data);
+      case "game_state_update":
+        return this.handleGameStateUpdate(socketId, data);
       default:
         return { success: false, reason: "Unknown action" };
     }
   }
 
-  handlePlayerInput(socketId, inputData) {
+  // Handle goal scored (called by frontend)
+  handleGoal(socketId, data) {
     const player = this.getPlayer(socketId);
     if (!player || !player.currentRoom) {
       return { success: false, reason: "Player not in a room" };
@@ -174,27 +142,54 @@ class GameService {
       return { success: false, reason: "Game not active" };
     }
 
-    // Delegate to physics engine
-    const result = physicsEngine.handlePlayerInput(room, socketId, inputData);
-
-    if (result.success && result.kickResult) {
-      // Broadcast kick action
-      gameBroadcaster.broadcastPlayerKick(
-        room.id,
-        player.id,
-        player.username,
-        result.kickResult
-      );
+    const { scorer } = data;
+    if (!scorer || !["player1", "player2"].includes(scorer)) {
+      return { success: false, reason: "Invalid scorer" };
     }
 
-    return result;
+    // Update score
+    room.gameState.score[scorer]++;
+
+    // Add to game events
+    const goalEvent = {
+      type: "goal",
+      player: scorer,
+      time: Date.now(),
+      newScore: { ...room.gameState.score },
+    };
+
+    room.gameState.gameEvents.push(goalEvent);
+    room.gameState.lastGoal = goalEvent;
+
+    // Broadcast goal event
+    gameBroadcaster.broadcastGoalEvent(room.id, {
+      type: "goal",
+      scorer: scorer,
+      newScore: room.gameState.score,
+      goalEvent: goalEvent,
+    });
+
+    return { success: true, goalEvent };
   }
 
-  handlePlayerKick(socketId, data) {
-    return this.handlePlayerInput(socketId, {
-      action: "kick",
-      pressed: data.pressed || true,
-    });
+  // Handle game state updates from frontend
+  handleGameStateUpdate(socketId, data) {
+    const player = this.getPlayer(socketId);
+    if (!player || !player.currentRoom) {
+      return { success: false, reason: "Player not in a room" };
+    }
+
+    const room = this.getRoom(player.currentRoom);
+    if (!room || !room.gameState.isActive) {
+      return { success: false, reason: "Game not active" };
+    }
+
+    // Update basic game state (frontend sends essential info)
+    if (data.gameTime !== undefined) {
+      room.gameState.gameTime = data.gameTime;
+    }
+
+    return { success: true };
   }
 
   // Save match after game ends
@@ -214,12 +209,12 @@ class GameService {
       // Check if match is already finished to prevent duplicate saves
       const currentMatch = await matchService.getMatchById(room.matchId);
       if (currentMatch.success && currentMatch.match.status === "finished") {
-        console.log(`⚠️ Match ${room.matchId} already finished, skipping save`);
+        console.log(`Match ${room.matchId} already finished, skipping save`);
         return;
       }
 
       const finalScore = gameResult.finalScore || room.gameState.score;
-      const duration = 120 - room.gameState.gameTime; // Calculate duration from remaining time
+      const duration = 60 - room.gameState.gameTime; // Calculate duration from remaining time
 
       console.log(`Saving match ${room.matchId} after game end...`);
       console.log(`Final score:`, finalScore);
@@ -235,28 +230,30 @@ class GameService {
         console.log(`Match ${room.matchId} saved successfully after game end`);
 
         // Update user stats for both players
-        const player1 = room.players[0];
-        const player2 = room.players[1];
-        const winner = matchResult.match.result.winner;
+        if (room.players.length >= 2) {
+          const player1 = room.players[0];
+          const player2 = room.players[1];
+          const winner = matchResult.match.result.winner;
 
-        if (player1.userId) {
-          const outcome =
-            winner === player1.userId
-              ? "win"
-              : winner === "draw"
-              ? "draw"
-              : "loss";
-          await userService.updateUserMatchStats(player1.userId, { outcome });
-        }
+          if (player1 && player1.userId) {
+            const outcome =
+              winner === player1.userId
+                ? "win"
+                : winner === "draw"
+                ? "draw"
+                : "loss";
+            await userService.updateUserMatchStats(player1.userId, { outcome });
+          }
 
-        if (player2.userId) {
-          const outcome =
-            winner === player2.userId
-              ? "win"
-              : winner === "draw"
-              ? "draw"
-              : "loss";
-          await userService.updateUserMatchStats(player2.userId, { outcome });
+          if (player2 && player2.userId) {
+            const outcome =
+              winner === player2.userId
+                ? "win"
+                : winner === "draw"
+                ? "draw"
+                : "loss";
+            await userService.updateUserMatchStats(player2.userId, { outcome });
+          }
         }
 
         console.log(`User stats updated for match ${room.matchId}`);
@@ -268,72 +265,101 @@ class GameService {
     }
   }
 
-  // Physics and Game Loop Management
-  async updateGamePhysics(roomId, deltaTime = 16.67) {
+  // Game State and Timer Management
+  async updateGameState(roomId, deltaTime = 16.67) {
     const room = this.getRoom(roomId);
 
     // Validate room exists and game is active
     if (!room) {
-      console.warn(`updateGamePhysics: Room ${roomId} not found`);
-      this.stopGameLoop(roomId); // Stop loop for non-existent room
+      console.warn(`updateGameState: Room ${roomId} not found`);
+      this.stopGameLoop(roomId);
       return null;
     }
 
     if (!room.gameState || !room.gameState.isActive) {
       console.log(
-        `updateGamePhysics: Game not active for room ${roomId}, stopping loop`
+        `updateGameState: Game not active for room ${roomId}, stopping loop`
       );
       this.stopGameLoop(roomId);
       return null;
     }
 
-    const result = physicsEngine.updateGamePhysics(room, deltaTime);
+    // Update game timer
+    room.gameState.gameTime -= deltaTime / 1000;
 
-    if (result) {
-      // Broadcast game state updates
-      gameBroadcaster.broadcastGameState(roomId, result);
-
-      // Handle goal events
-      if (result.goalResult) {
-        gameBroadcaster.broadcastGoalEvent(roomId, result.goalResult);
-      }
-
-      // Handle game end
-      if (result.type === "game-ended") {
-        console.log(`Game ended for room ${roomId}, processing...`);
-
-        // Mark game as inactive BEFORE stopping loop
-        room.gameState.isActive = false;
-        room.status = "finished";
-        this.stopGameLoop(roomId);
-
-        console.log(
-          `🏁 Room ${roomId} status set to finished, saving match...`
-        );
-
-        // Save match to database after game status is set to finished
-        await this.saveMatchAfterGameEnd(room, result);
-
-        gameBroadcaster.broadcastGameEnd(roomId, result);
-        return result;
-      }
+    // Check if game should end
+    if (room.gameState.gameTime <= 0) {
+      room.gameState.gameTime = 0;
+      console.log(`Time's up! Ending game for room ${roomId}`);
+      return this.endGameByTime(room);
     }
 
-    return result;
+    // Broadcast basic game state
+    gameBroadcaster.broadcastGameState(roomId, {
+      room: room,
+      gameState: room.gameState,
+      timestamp: Date.now(),
+    });
+
+    return {
+      room: room,
+      gameState: room.gameState,
+      timestamp: Date.now(),
+    };
+  }
+
+  // End game when time runs out
+  endGameByTime(room) {
+    const finalScore = room.gameState.score;
+    let winner = null;
+
+    if (finalScore.player1 > finalScore.player2) {
+      winner = "player1";
+    } else if (finalScore.player2 > finalScore.player1) {
+      winner = "player2";
+    } else {
+      winner = "draw";
+    }
+
+    const gameResult = {
+      type: "game-ended",
+      reason: "time-up",
+      finalScore: finalScore,
+      winner: winner,
+      duration: 30, // Match duration
+      timestamp: Date.now(),
+    };
+
+    console.log(
+      `Game ended for room ${room.id}: ${winner} wins with score ${finalScore.player1}-${finalScore.player2}`
+    );
+
+    room.gameState.isActive = false;
+    room.status = "finished";
+    room.endedAt = new Date();
+
+    return gameResult;
   }
 
   // Game Loop Management
   startGameLoopCoordinator() {
+    console.log("Game State Coordinator started");
+    let lastLogTime = 0;
+
     // Check for active games every 100ms and ensure they have game loops
     setInterval(() => {
+      const now = Date.now();
+
       this.gameRooms.forEach((room, roomId) => {
+        // Only log room status every 5 seconds to reduce spam, unless there's a status change
+        const shouldLog = now - lastLogTime > 5000;
+
         // Only start loops for actively playing games
         if (
           room.gameState.isActive &&
           room.status === "playing" &&
           !this.gameLoops.has(roomId)
         ) {
-          console.log(`Coordinator starting game loop for room ${roomId}`);
           this.startGameLoop(roomId);
         }
 
@@ -348,7 +374,11 @@ class GameService {
           this.stopGameLoop(roomId);
         }
       });
-    }, 100);
+
+      if (now - lastLogTime > 5000) {
+        lastLogTime = now;
+      }
+    }, 1000);
   }
 
   startGameLoop(roomId) {
@@ -357,11 +387,11 @@ class GameService {
       return;
     }
 
-    console.log(`Starting 60fps game loop for room ${roomId}`);
+    console.log(`Starting game state loop for room ${roomId}`);
 
     let lastUpdate = Date.now();
-    const targetFPS = 60;
-    const targetDelta = 1000 / targetFPS; // 16.67ms
+    const targetFPS = 10; // Lower frequency for timer-only updates
+    const targetDelta = 1000 / targetFPS; // 100ms
 
     const gameLoop = setInterval(async () => {
       const currentTime = Date.now();
@@ -372,7 +402,7 @@ class GameService {
         // Check if room still exists before updating
         const room = this.getRoom(roomId);
         if (!room) {
-          console.log(`🛑 Room ${roomId} no longer exists, stopping game loop`);
+          console.log(`Room ${roomId} no longer exists, stopping game loop`);
           this.stopGameLoop(roomId);
           return;
         }
@@ -380,17 +410,32 @@ class GameService {
         // Check if game is still active
         if (!room.gameState.isActive || room.status !== "playing") {
           console.log(
-            `🛑 Game no longer active for room ${roomId}, stopping game loop`
+            `Game no longer active for room ${roomId}, stopping game loop`
           );
           this.stopGameLoop(roomId);
           return;
         }
 
-        const result = await this.updateGamePhysics(roomId, deltaTime);
+        const result = await this.updateGameState(roomId, deltaTime);
 
         // If game ended, stop the loop
         if (result && result.type === "game-ended") {
+          console.log(`Game ended for room ${roomId}, processing...`);
+
+          // Mark game as inactive BEFORE stopping loop
+          room.gameState.isActive = false;
+          room.status = "finished";
           this.stopGameLoop(roomId);
+
+          console.log(`Room ${roomId} status set to finished, saving match...`);
+
+          // Save match to database after game status is set to finished
+          await this.saveMatchAfterGameEnd(room, result);
+
+          gameBroadcaster.broadcastGameEnd(roomId, result);
+
+          // Start rematch decision timer (3 minutes)
+          this.startRematchTimer(roomId);
         }
       } catch (error) {
         console.error(`Error in game loop for room ${roomId}:`, error);
@@ -407,14 +452,8 @@ class GameService {
     if (gameLoop) {
       clearInterval(gameLoop);
       this.gameLoops.delete(roomId);
-      console.log(`🛑 Stopped game loop for room ${roomId}`);
+      console.log(`Stopped game loop for room ${roomId}`);
     }
-  }
-
-  // Enhanced game start with loop
-  startRoomGameWithLoop(room) {
-    // Game loop will be started automatically by coordinator
-    console.log(`Game started in room ${room.id} with 60fps physics loop`);
   }
 
   // Unified Statistics API
@@ -428,8 +467,117 @@ class GameService {
     };
   }
 
+  // Rematch Timer Management
+  startRematchTimer(roomId) {
+    const room = this.getRoom(roomId);
+    if (!room) return;
+
+    console.log(`Starting 3-minute rematch timer for room ${roomId}`);
+
+    // Mark timeout as active
+    room.rematchState.timeoutActive = true;
+
+    const timer = setTimeout(() => {
+      console.log(`Rematch timer expired for room ${roomId}, deleting room`);
+      this.handleRematchTimeout(roomId);
+    }, 180000); // 3 minutes
+
+    this.rematchTimers.set(roomId, timer);
+  }
+
+  stopRematchTimer(roomId) {
+    const timer = this.rematchTimers.get(roomId);
+    if (timer) {
+      clearTimeout(timer);
+      this.rematchTimers.delete(roomId);
+
+      // Mark timeout as inactive
+      const room = this.getRoom(roomId);
+      if (room && room.rematchState) {
+        room.rematchState.timeoutActive = false;
+      }
+
+      console.log(`Stopped rematch timer for room ${roomId}`);
+    }
+  }
+
+  handleRematchTimeout(roomId) {
+    const room = this.getRoom(roomId);
+    if (room && room.status === "finished") {
+      // Notify players that rematch window expired
+      gameBroadcaster.broadcastRematchTimeout(roomId);
+
+      // Delete room after timeout
+      setTimeout(() => {
+        console.log(`Deleting room ${roomId} after rematch timeout`);
+        roomManagerService.deleteRoom(roomId);
+      }, 2000); // 2-second delay for final notification
+    }
+    this.stopRematchTimer(roomId);
+  }
+
+  // Rematch Request Management
+  requestRematch(socketId) {
+    const player = this.getPlayer(socketId);
+    if (!player || !player.currentRoom) {
+      return { success: false, reason: "Player not in a room" };
+    }
+
+    const result = roomManagerService.requestRematch(
+      player,
+      player.currentRoom
+    );
+
+    if (result.success && result.bothRequested) {
+      // Both players requested - execute rematch
+      this.executeRematch(player.currentRoom);
+    }
+
+    return result;
+  }
+
+  declineRematch(socketId) {
+    const player = this.getPlayer(socketId);
+    if (!player || !player.currentRoom) {
+      return { success: false, reason: "Player not in a room" };
+    }
+
+    const result = roomManagerService.declineRematch(
+      player,
+      player.currentRoom
+    );
+
+    if (result.success) {
+      // Stop rematch timer and schedule room deletion
+      this.stopRematchTimer(player.currentRoom);
+
+      // Delete room after brief delay
+      setTimeout(() => {
+        console.log(
+          `Deleting room ${player.currentRoom} after rematch declined`
+        );
+        roomManagerService.deleteRoom(player.currentRoom);
+      }, 2000);
+    }
+
+    return result;
+  }
+
+  executeRematch(roomId) {
+    const result = roomManagerService.executeRematch(roomId);
+    if (result.success) {
+      // Stop the rematch timer since players agreed to rematch
+      this.stopRematchTimer(roomId);
+
+      // Broadcast rematch confirmation
+      gameBroadcaster.broadcastRematchConfirmed(roomId, result.room);
+    }
+    return result;
+  }
+
   // Socket.IO Integration
   setSocketIO(io) {
+    this.io = io;
     gameBroadcaster.setSocketIO(io);
   }
 }

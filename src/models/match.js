@@ -1,12 +1,21 @@
 const mongoose = require("mongoose");
 
+/**
+ * Match Model - Game Match Records
+ *
+ * Purpose: Stores completed match data for statistics and history
+ * Scope: MongoDB database, permanent storage
+ * Lifespan: Permanent match records
+ *
+ * Features: Player match data, scores, results, timestamps
+ */
 const matchSchema = new mongoose.Schema(
   {
     // Match Identity
     matchId: {
       type: String,
       required: true,
-      unique: true,
+      unique: true, // This automatically creates a unique index
       default: function () {
         return `match_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       },
@@ -33,6 +42,7 @@ const matchSchema = new mongoose.Schema(
         goals: {
           type: Number,
           default: 0,
+          min: 0,
         },
       },
     ],
@@ -45,8 +55,16 @@ const matchSchema = new mongoose.Schema(
         default: null, // Null for draw
       },
       finalScore: {
-        player1: { type: Number, default: 0 },
-        player2: { type: Number, default: 0 },
+        player1: {
+          type: Number,
+          default: 0,
+          min: 0,
+        },
+        player2: {
+          type: Number,
+          default: 0,
+          min: 0,
+        },
       },
       outcome: {
         type: String,
@@ -56,6 +74,7 @@ const matchSchema = new mongoose.Schema(
       duration: {
         type: Number, // Duration in seconds
         default: null, // Set when match ends
+        min: 0,
       },
     },
 
@@ -82,13 +101,12 @@ const matchSchema = new mongoose.Schema(
   }
 );
 
-// Indexes for efficient queries
-matchSchema.index({ matchId: 1 }, { unique: true });
+// Performance indexes (matchId already has unique: true)
 matchSchema.index({ "players.user": 1 });
 matchSchema.index({ status: 1 });
 matchSchema.index({ startedAt: -1 });
 
-// Compound index for user match history
+// Compound index for user match history queries
 matchSchema.index({ "players.user": 1, startedAt: -1 });
 
 module.exports = mongoose.model("Match", matchSchema);

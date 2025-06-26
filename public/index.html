@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MetaHead Arena - Head Ball Game</title>
+    <title>MetaHead Arena - Complete Socket Events Demo</title>
     <link rel="stylesheet" href="styles.css" />
     <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
@@ -21,7 +21,7 @@
         <div class="container">
           <div class="logo">
             <i class="fas fa-futbol"></i>
-            <h1>MetaHead Arena</h1>
+            <h1>MetaHead Arena - Complete Socket Demo</h1>
           </div>
           <div class="connection-indicator">
             <div class="status-dot" id="statusDot"></div>
@@ -30,69 +30,65 @@
         </div>
       </header>
 
+      <!-- Demo Info -->
+      <div class="demo-info">
+        <div class="container">
+          <div class="demo-banner">
+            <i class="fas fa-flask"></i>
+            <strong>Complete Socket Events Demo:</strong> This demonstrates all
+            socket events from the backend. Open multiple browser tabs to test
+            multiplayer functionality!
+          </div>
+        </div>
+      </div>
+
       <main class="main">
         <div class="container">
-          <!-- Game Status Panel -->
+          <!-- Connection & Player Panel -->
           <section class="status-panel">
-            <!-- Web3 Connection Section -->
             <div class="web3-section">
               <div class="info-card">
-                <h3><i class="fas fa-wallet"></i> Web3 Connection</h3>
+                <h3><i class="fas fa-wallet"></i> Player Connection</h3>
                 <div class="info-grid">
                   <div class="info-item">
                     <label>Wallet:</label>
                     <span id="walletAddress">Not Connected</span>
                   </div>
-                </div>
-                <button class="btn btn-primary" id="connectWalletBtn">
-                  <i class="fas fa-link"></i> Connect Wallet
-                </button>
-              </div>
-            </div>
-
-            <!-- NFT Selection Section -->
-            <div class="nft-section">
-              <div class="info-card">
-                <h3><i class="fas fa-gem"></i> NFT Power-Up (Optional)</h3>
-                <div class="info-grid">
-                  <div class="info-item">
-                    <label>Selected NFT:</label>
-                    <select id="nftSelect">
-                      <option value="">No NFT (Default)</option>
-                      <option value="674a8f1c2d3e4f5g6h7i8j9k">
-                        Fire Head (Speed +20%)
-                      </option>
-                      <option value="674a8f1c2d3e4f5g6h7i8j9l">
-                        Ice Head (Jump +15%)
-                      </option>
-                      <option value="674a8f1c2d3e4f5g6h7i8j9m">
-                        Lightning Head (Kick +25%)
-                      </option>
-                    </select>
-                  </div>
-                  <div class="info-item">
-                    <label>Modifiers:</label>
-                    <div id="nftModifiers" class="modifiers-display">
-                      <span class="modifier">Speed: 1.0x</span>
-                      <span class="modifier">Jump: 1.0x</span>
-                      <span class="modifier">Kick: 1.0x</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="player-info">
-              <div class="info-card">
-                <h3><i class="fas fa-user"></i> Game Status</h3>
-                <div class="info-grid">
                   <div class="info-item">
                     <label>Player ID:</label>
                     <span id="playerId">None</span>
                   </div>
                   <div class="info-item">
-                    <label>Room:</label>
+                    <label>Username:</label>
+                    <span id="username">Anonymous</span>
+                  </div>
+                  <div class="info-item">
+                    <label>Server Time:</label>
+                    <span id="serverTime">-</span>
+                  </div>
+                </div>
+                <div class="button-group">
+                  <button class="btn btn-primary" id="connectWalletBtn">
+                    <i class="fas fa-link"></i> Connect Wallet (Demo)
+                  </button>
+                  <button class="btn btn-secondary" id="joinGameBtn" disabled>
+                    <i class="fas fa-sign-in-alt"></i> Join Game
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="room-section">
+              <div class="info-card">
+                <h3><i class="fas fa-home"></i> Room Status</h3>
+                <div class="info-grid">
+                  <div class="info-item">
+                    <label>Room ID:</label>
                     <span id="roomId">None</span>
+                  </div>
+                  <div class="info-item">
+                    <label>Room Code:</label>
+                    <span id="roomCode">None</span>
                   </div>
                   <div class="info-item">
                     <label>Status:</label>
@@ -102,25 +98,66 @@
                     <label>Players:</label>
                     <span id="playersInRoom">0/2</span>
                   </div>
+                  <div class="info-item">
+                    <label>Room Type:</label>
+                    <span id="roomType">None</span>
+                  </div>
+                  <div class="info-item">
+                    <label>Game Mode:</label>
+                    <span id="gameMode">1v1</span>
+                  </div>
                 </div>
               </div>
             </div>
+          </section>
 
-            <!-- Action Buttons -->
-            <div class="action-panel">
-              <div class="button-group">
-                <button class="btn btn-primary" id="joinGameBtn" disabled>
-                  <i class="fas fa-sign-in-alt"></i> Join Game
-                </button>
-                <button class="btn btn-secondary" id="findMatchBtn">
+          <!-- Room Management Panel -->
+          <section class="room-management">
+            <div class="section-header">
+              <h2><i class="fas fa-cogs"></i> Room Management</h2>
+            </div>
+            <div class="management-grid">
+              <div class="management-card">
+                <h3><i class="fas fa-search"></i> Find Match</h3>
+                <p>Quick matchmaking - automatically find an opponent</p>
+                <button class="btn btn-primary" id="findMatchBtn">
                   <i class="fas fa-search"></i> Find Match
                 </button>
-                <button class="btn btn-warning" id="toggleReadyBtn">
-                  <i class="fas fa-check-circle"></i> Ready Up!
+              </div>
+
+              <div class="management-card">
+                <h3><i class="fas fa-plus"></i> Create Room</h3>
+                <p>Create a new room and get a shareable room code</p>
+                <button class="btn btn-secondary" id="createRoomBtn">
+                  <i class="fas fa-plus"></i> Create Room
                 </button>
-                <button class="btn btn-danger" id="leaveRoomBtn">
-                  <i class="fas fa-sign-out-alt"></i> Leave Room
-                </button>
+              </div>
+
+              <div class="management-card">
+                <h3><i class="fas fa-key"></i> Join by Code</h3>
+                <div class="input-group">
+                  <input
+                    type="text"
+                    id="roomCodeInput"
+                    placeholder="Enter room code"
+                    maxlength="20"
+                  />
+                  <button class="btn btn-warning" id="joinByCodeBtn">
+                    <i class="fas fa-key"></i> Join
+                  </button>
+                </div>
+              </div>
+
+              <div class="management-card">
+                <h3><i class="fas fa-play"></i> Game Control</h3>
+                <div class="button-group">
+                  <button class="btn btn-success" id="toggleReadyBtn">
+                    <i class="fas fa-check-circle"></i> Ready Up!
+                  </button>
+                  <button class="btn btn-danger" id="leaveRoomBtn">
+                    <i class="fas fa-sign-out-alt"></i> Leave Room
+                  </button>
+                </div>
               </div>
             </div>
           </section>
@@ -129,15 +166,15 @@
           <section class="game-arena">
             <div class="scoreboard">
               <div class="score-item">
-                <span class="team">Player 1</span>
+                <span class="team" id="player1Name">Player 1</span>
                 <span class="score" id="player1Score">0</span>
               </div>
               <div class="game-timer">
                 <i class="fas fa-clock"></i>
-                <span id="gameTime">2:00</span>
+                <span id="gameTime">0:30</span>
               </div>
               <div class="score-item">
-                <span class="team">Player 2</span>
+                <span class="team" id="player2Name">Player 2</span>
                 <span class="score" id="player2Score">0</span>
               </div>
             </div>
@@ -159,15 +196,11 @@
 
               <!-- Players -->
               <div class="player player1" id="player1Sprite">
-                <div class="player-avatar">
-                  <i class="fas fa-running"></i>
-                </div>
+                <i class="fas fa-running"></i>
                 <div class="player-name">P1</div>
               </div>
               <div class="player player2" id="player2Sprite">
-                <div class="player-avatar">
-                  <i class="fas fa-running"></i>
-                </div>
+                <i class="fas fa-running"></i>
                 <div class="player-name">P2</div>
               </div>
 
@@ -175,37 +208,133 @@
               <div class="ball" id="ballSprite">
                 <i class="fas fa-futbol"></i>
               </div>
+
+              <!-- Game Status Overlay -->
+              <div class="game-overlay" id="gameOverlay">
+                <div class="overlay-content">
+                  <h2 id="overlayTitle">Waiting for Players...</h2>
+                  <p id="overlayMessage">Ready up to start the game!</p>
+                </div>
+              </div>
             </div>
 
-            <!-- Controls -->
-            <div class="controls-panel">
+            <!-- Game Control Panel -->
+            <div class="game-controls">
               <div class="controls-section">
                 <h3><i class="fas fa-gamepad"></i> Game Controls</h3>
                 <div class="controls-grid">
-                  <button class="control-btn" id="moveLeftBtn" data-key="A">
-                    <i class="fas fa-arrow-left"></i>
-                    <span>Move Left</span>
+                  <div class="control-info">
+                    <h4>Movement</h4>
+                    <p><strong>A/D or ←/→:</strong> Move left/right</p>
+                    <p><strong>W or ↑ or Space:</strong> Jump</p>
+                    <p><strong>S or ↓:</strong> Kick (near ball)</p>
+                  </div>
+                  <div class="control-info">
+                    <h4>Game Actions</h4>
+                    <div class="button-group">
+                      <button class="btn btn-sm btn-info" id="goalPlayer1Btn">
+                        <i class="fas fa-futbol"></i> Goal P1
+                      </button>
+                      <button class="btn btn-sm btn-info" id="goalPlayer2Btn">
+                        <i class="fas fa-futbol"></i> Goal P2
+                      </button>
+                      <button class="btn btn-sm btn-warning" id="endGameBtn">
+                        <i class="fas fa-flag"></i> End Game
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Rematch Panel -->
+          <section
+            class="rematch-panel"
+            id="rematchPanel"
+            style="display: none"
+          >
+            <div class="section-header">
+              <h2><i class="fas fa-redo"></i> Post-Game</h2>
+            </div>
+            <div class="rematch-content">
+              <div class="match-results">
+                <h3 id="matchResultTitle">Match Completed!</h3>
+                <div class="final-score">
+                  <span id="finalScore">0 - 0</span>
+                </div>
+                <div class="match-stats">
+                  <div class="stat-item">
+                    <label>Duration:</label>
+                    <span id="matchDuration">30s</span>
+                  </div>
+                  <div class="stat-item">
+                    <label>Winner:</label>
+                    <span id="matchWinner">Draw</span>
+                  </div>
+                </div>
+              </div>
+              <div class="rematch-controls">
+                <div class="button-group">
+                  <button class="btn btn-primary" id="requestRematchBtn">
+                    <i class="fas fa-redo"></i> Request Rematch
                   </button>
-                  <button class="control-btn" id="jumpBtn" data-key="W">
-                    <i class="fas fa-arrow-up"></i>
-                    <span>Jump</span>
-                  </button>
-                  <button class="control-btn" id="moveRightBtn" data-key="D">
-                    <i class="fas fa-arrow-right"></i>
-                    <span>Move Right</span>
-                  </button>
-                  <button
-                    class="control-btn kick-btn"
-                    id="kickBtn"
-                    data-key="S"
-                  >
-                    <i class="fas fa-futbol"></i>
-                    <span>Kick Ball</span>
+                  <button class="btn btn-danger" id="declineRematchBtn">
+                    <i class="fas fa-times"></i> Decline Rematch
                   </button>
                 </div>
-                <div class="controls-hint">
-                  <i class="fas fa-keyboard"></i>
-                  Use WASD keys or Arrow keys to control your player
+                <div id="rematchStatus" class="rematch-status"></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Event Monitor -->
+          <section class="event-monitor">
+            <div class="section-header">
+              <h2><i class="fas fa-terminal"></i> Socket Events Monitor</h2>
+              <div class="monitor-controls">
+                <button class="btn btn-sm btn-outline" id="clearLogsBtn">
+                  <i class="fas fa-trash"></i> Clear
+                </button>
+                <button class="btn btn-sm btn-outline" id="toggleAutoScrollBtn">
+                  <i class="fas fa-arrow-down"></i> Auto-scroll
+                </button>
+              </div>
+            </div>
+            <div class="event-log" id="eventLog">
+              <div class="log-entry info">
+                <span class="timestamp">[00:00:00]</span>
+                <span class="event-type">[INFO]</span>
+                <span class="message">Socket Events Monitor initialized</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- Stats Panel -->
+          <section class="stats-panel">
+            <div class="section-header">
+              <h2><i class="fas fa-chart-bar"></i> Game Statistics</h2>
+            </div>
+            <div class="stats-grid">
+              <div class="stat-card">
+                <h3>Server Stats</h3>
+                <div class="stat-item">
+                  <label>Total Players:</label>
+                  <span id="totalPlayers">-</span>
+                </div>
+                <div class="stat-item">
+                  <label>Active Rooms:</label>
+                  <span id="activeRooms">-</span>
+                </div>
+                <div class="stat-item">
+                  <label>Memory Usage:</label>
+                  <span id="memoryUsage">-</span>
+                </div>
+              </div>
+              <div class="stat-card">
+                <h3>Match History</h3>
+                <div id="matchHistory" class="match-list">
+                  <p class="no-matches">No matches played yet</p>
                 </div>
               </div>
             </div>

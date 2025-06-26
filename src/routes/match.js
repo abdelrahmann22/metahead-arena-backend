@@ -4,6 +4,12 @@ const matchController = require("../controllers/matchController");
 const router = express.Router();
 
 /**
+ * @fileoverview Match Management Routes
+ * @description RESTful API routes for match history and game result management
+ * @module routes/match
+ */
+
+/**
  * @swagger
  * /api/matches/user/{userId}/history:
  *   get:
@@ -49,6 +55,10 @@ const router = express.Router();
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ */
+/**
+ * GET /api/matches/user/:userId/history
+ * Retrieve paginated match history for a specific user
  */
 router.get("/user/:userId/history", matchController.getUserMatchHistory);
 
@@ -131,6 +141,10 @@ router.get("/user/:userId/history", matchController.getUserMatchHistory);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
+/**
+ * GET /api/matches/user/:userId/match/:matchId
+ * Retrieve detailed match information from specific user's perspective
+ */
 router.get(
   "/user/:userId/match/:matchId",
   matchController.getUserSpecificMatch
@@ -162,6 +176,10 @@ router.get(
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ */
+/**
+ * GET /api/matches/:matchId
+ * Retrieve complete match details by match ID
  */
 router.get("/:matchId", matchController.getMatchById);
 

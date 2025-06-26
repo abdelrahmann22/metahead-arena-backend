@@ -2,10 +2,12 @@ const userService = require("../services/userService");
 
 /**
  * Create or login user with wallet address
+ * @route POST /api/users/wallet
+ * @body {string} walletAddress - User's wallet address
  */
 const createOrLoginUser = async (req, res) => {
   try {
-    const { walletAddress, username } = req.body;
+    const { walletAddress } = req.body;
 
     if (!walletAddress) {
       return res.status(400).json({
@@ -14,10 +16,7 @@ const createOrLoginUser = async (req, res) => {
       });
     }
 
-    const result = await userService.createUserFromWallet(
-      walletAddress,
-      username
-    );
+    const result = await userService.createUserFromWallet(walletAddress);
 
     if (!result.success) {
       return res.status(400).json({
@@ -47,6 +46,8 @@ const createOrLoginUser = async (req, res) => {
 
 /**
  * Get user by wallet address
+ * @route GET /api/users/wallet/:walletAddress
+ * @param {string} walletAddress - User's wallet address
  */
 const getUserByWallet = async (req, res) => {
   try {
@@ -84,6 +85,8 @@ const getUserByWallet = async (req, res) => {
 
 /**
  * Get user profile with stats
+ * @route GET /api/users/:userId/profile
+ * @param {string} userId - User ID or wallet address
  */
 const getUserProfile = async (req, res) => {
   try {
@@ -109,7 +112,6 @@ const getUserProfile = async (req, res) => {
     const profile = {
       id: result.user._id,
       walletAddress: result.user.walletAddress,
-      username: result.user.username,
       joinedAt: result.user.joinedAt,
       stats: {
         wins: result.user.gameStats.wins,
