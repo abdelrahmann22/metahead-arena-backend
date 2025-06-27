@@ -4,6 +4,8 @@ const cors = require("cors");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const morgan = require("morgan");
+const path = require("path");
+const cookieParser = require("cookie-parser");
 require("dotenv").config();
 
 // Import configurations
@@ -43,14 +45,22 @@ app.use("/api", limiter);
 // CORS configuration
 app.use(
   cors({
-    origin: "*",
-    credentials: true,
+    origin:
+      process.env.NODE_ENV === "production"
+        ? process.env.FRONTEND_URL
+        : [
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:5500",
+          ],
+    credentials: true, // Allow cookies in CORS
   })
 );
 
 // Body parsing middleware
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+app.use(cookieParser()); // Add cookie parser for handling cookies
 
 // Logging middleware
 app.use(morgan("combined"));
@@ -71,6 +81,30 @@ app.use(
     customSiteTitle: "Head Ball Game API Documentation",
   })
 );
+
+// Security headers for production
+if (process.env.NODE_ENV === "production") {
+  app.use((req, res, next) => {
+    // Prevent XSS
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("X-XSS-Protection", "1; mode=block");
+
+    // HTTPS enforcement
+    res.setHeader(
+      "Strict-Transport-Security",
+      "max-age=31536000; includeSubDomains"
+    );
+
+    // Content Security Policy
+    res.setHeader(
+      "Content-Security-Policy",
+      "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline';"
+    );
+
+    next();
+  });
+}
 
 // API Routes
 app.use("/api", routes);

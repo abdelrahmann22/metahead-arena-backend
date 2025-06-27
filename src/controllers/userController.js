@@ -1,50 +1,6 @@
 const userService = require("../services/userService");
 
 /**
- * Create or login user with wallet address
- * @route POST /api/users/wallet
- * @body {string} walletAddress - User's wallet address
- */
-const createOrLoginUser = async (req, res) => {
-  try {
-    const { walletAddress } = req.body;
-
-    if (!walletAddress) {
-      return res.status(400).json({
-        success: false,
-        message: "Wallet address is required",
-      });
-    }
-
-    const result = await userService.createUserFromWallet(walletAddress);
-
-    if (!result.success) {
-      return res.status(400).json({
-        success: false,
-        message: result.error,
-      });
-    }
-
-    res.json({
-      success: true,
-      message: result.isNewUser
-        ? "User created successfully"
-        : "User logged in successfully",
-      data: {
-        user: result.user,
-        isNewUser: result.isNewUser,
-      },
-    });
-  } catch (error) {
-    console.error("Error creating/logging user:", error);
-    res.status(500).json({
-      success: false,
-      message: "Internal server error",
-    });
-  }
-};
-
-/**
  * Get user by wallet address
  * @route GET /api/users/wallet/:walletAddress
  * @param {string} walletAddress - User's wallet address
@@ -136,7 +92,6 @@ const getUserProfile = async (req, res) => {
 };
 
 module.exports = {
-  createOrLoginUser,
   getUserByWallet,
   getUserProfile,
 };

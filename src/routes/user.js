@@ -1,5 +1,6 @@
 const express = require("express");
 const userController = require("../controllers/userController");
+const { verifyLogin } = require("../middlewares/verify_login.middleware");
 
 const router = express.Router();
 
@@ -8,45 +9,6 @@ const router = express.Router();
  * @description RESTful API routes for Web3 user authentication and profile management
  * @module routes/user
  */
-
-/**
- * @swagger
- * /api/users/auth:
- *   post:
- *     summary: Create or login user with wallet
- *     tags: [Users]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - walletAddress
- *             properties:
- *               walletAddress:
- *                 type: string
- *                 description: Web3 wallet address
- *                 example: "0x742d35Cc6634C0532925a3b8D"
- *     responses:
- *       200:
- *         description: User successfully authenticated
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/User'
- *       400:
- *         description: Bad request
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
-/**
- * POST /api/users/auth
- * Authenticate user with Web3 wallet address (create if new, login if exists)
- */
-router.post("/auth", userController.createOrLoginUser);
 
 /**
  * @swagger
@@ -87,6 +49,8 @@ router.get("/wallet/:walletAddress", userController.getUserByWallet);
  *   get:
  *     summary: Get user profile with stats
  *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: userId
@@ -101,6 +65,18 @@ router.get("/wallet/:walletAddress", userController.getUserByWallet);
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/User'
+ *       401:
+ *         description: Unauthorized - JWT token required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       403:
+ *         description: Forbidden - Invalid or expired token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  *       404:
  *         description: User not found
  *         content:
@@ -112,6 +88,6 @@ router.get("/wallet/:walletAddress", userController.getUserByWallet);
  * GET /api/users/profile/:userId
  * Retrieve user profile with game statistics by database ID
  */
-router.get("/profile/:userId", userController.getUserProfile);
+router.get("/profile/:userId", verifyLogin, userController.getUserProfile);
 
 module.exports = router;

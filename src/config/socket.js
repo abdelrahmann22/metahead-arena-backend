@@ -1,4 +1,5 @@
 const socketIo = require("socket.io");
+const jwt = require("jsonwebtoken");
 const gameService = require("../services/gameService");
 const matchService = require("../services/matchService");
 const gameBroadcaster = require("../services/gameBroadcaster");
@@ -10,38 +11,86 @@ const userService = require("../services/userService");
  * @module config/socket
  */
 
+// === Authentication Helpers ===
+
+/**
+ * Parse cookies from socket handshake headers
+ * @param {Object} headers - Socket handshake headers
+ * @returns {Object} - Parsed cookies object
+ */
+const parseCookies = (headers) => {
+  const cookies = {};
+  const cookieHeader = headers.cookie;
+
+  if (cookieHeader) {
+    cookieHeader.split(";").forEach((cookie) => {
+      const [name, value] = cookie.trim().split("=");
+      if (name && value) {
+        cookies[name] = decodeURIComponent(value);
+      }
+    });
+  }
+
+  return cookies;
+};
+
+/**
+ * Verify JWT token from socket connection
+ * @param {Socket} socket - Socket.IO socket instance
+ * @returns {Object|null} - Decoded JWT payload or null if invalid
+ */
+const verifySocketAuth = (socket) => {
+  try {
+    const cookies = parseCookies(socket.handshake.headers);
+    const token = cookies.authToken;
+
+    if (!token) {
+      return null;
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    return decoded;
+  } catch (error) {
+    console.error("Socket auth verification failed:", error.message);
+    return null;
+  }
+};
+
 // === Socket Event Handlers ===
 
 /**
  * Handle player joining the game
  * @param {Socket} socket - Socket.IO socket instance
  * @param {Server} io - Socket.IO server instance
- * @param {Object} data - Player join data containing walletAddress
+ * @param {Object} data - Player join data (no walletAddress needed)
  */
 const handlePlayerJoin = async (socket, io, data) => {
   try {
-    // Validate required data
-    if (!data?.walletAddress) {
+    // Verify authentication from JWT token
+    const authPayload = verifySocketAuth(socket);
+    if (!authPayload) {
       socket.emit("error", {
-        message: "Wallet address is required",
-        type: "VALIDATION_ERROR",
+        message: "Authentication required. Please login first.",
+        type: "AUTH_REQUIRED",
       });
       return;
     }
 
-    // Create or get user from database
-    const userResult = await userService.createUserFromWallet(
-      data.walletAddress
-    );
-    if (!userResult.success) {
+    // Get user from database using authenticated userId
+    const userResult = await userService.findUserById(authPayload.userId);
+    if (!userResult.success || !userResult.user) {
       socket.emit("error", {
-        message: userResult.error,
+        message: "User not found in database",
         type: "USER_ERROR",
       });
       return;
     }
 
     const user = userResult.user;
+
+    // Store authenticated user info in socket for future use
+    socket.userId = user._id;
+    socket.walletAddress = user.walletAddress;
 
     // Create player or get existing
     let result = gameService.createPlayer(
@@ -76,12 +125,32 @@ const handlePlayerJoin = async (socket, io, data) => {
 };
 
 /**
+ * Middleware to check authentication for socket events
+ * @param {Socket} socket - Socket.IO socket instance
+ * @returns {boolean} - True if authenticated, false otherwise
+ */
+const requireAuth = (socket) => {
+  const authPayload = verifySocketAuth(socket);
+  if (!authPayload) {
+    socket.emit("error", {
+      message: "Authentication required for this action",
+      type: "AUTH_REQUIRED",
+    });
+    return false;
+  }
+  return true;
+};
+
+/**
  * Handle finding a match through matchmaking
  * @param {Socket} socket - Socket.IO socket instance
  * @param {Server} io - Socket.IO server instance
  */
 const handleFindMatch = (socket, io) => {
   try {
+    // Check authentication
+    if (!requireAuth(socket)) return;
+
     const result = gameService.findMatch(socket.id);
 
     if (result.success) {
@@ -131,6 +200,9 @@ const handleFindMatch = (socket, io) => {
  */
 const handleCreateRoom = async (socket, io) => {
   try {
+    // Check authentication
+    if (!requireAuth(socket)) return;
+
     const player = gameService.getPlayer(socket.id);
     if (!player) {
       socket.emit("error", {
@@ -186,6 +258,9 @@ const handleCreateRoom = async (socket, io) => {
  */
 const handleJoinRoomByCode = async (socket, io, data) => {
   try {
+    // Check authentication
+    if (!requireAuth(socket)) return;
+
     const { roomCode } = data;
     if (!roomCode) {
       socket.emit("error", {
@@ -247,6 +322,9 @@ const handleJoinRoomByCode = async (socket, io, data) => {
  */
 const handlePlayerReady = async (socket, io) => {
   try {
+    // Check authentication
+    if (!requireAuth(socket)) return;
+
     const result = gameService.togglePlayerReady(socket.id);
 
     if (result.success) {
@@ -643,6 +721,7 @@ function initializeSocket(server) {
     cors: {
       origin: "*",
       methods: ["GET", "POST"],
+      credentials: true, // Enable credentials for cookie authentication
     },
     pingTimeout: 60000,
     pingInterval: 25000,
@@ -661,12 +740,25 @@ function initializeSocket(server) {
   io.on("connection", (socket) => {
     connectionCount++;
 
-    // Send welcome message with player info
-    socket.emit("welcome", {
-      message: "Welcome to MetaHead Arena!",
-      playerId: socket.id,
-      serverTime: Date.now(),
-    });
+    // Verify authentication on connection
+    const authPayload = verifySocketAuth(socket);
+    if (authPayload) {
+      socket.emit("welcome", {
+        message: "Welcome to MetaHead Arena!",
+        playerId: socket.id,
+        authenticated: true,
+        walletAddress: authPayload.address,
+        serverTime: Date.now(),
+      });
+    } else {
+      socket.emit("welcome", {
+        message: "Welcome to MetaHead Arena!",
+        playerId: socket.id,
+        authenticated: false,
+        notice: "Please authenticate to join games",
+        serverTime: Date.now(),
+      });
+    }
 
     // === Core Game Event Handlers ===
     socket.on("join-game", (data) => handlePlayerJoin(socket, io, data));

@@ -30,14 +30,29 @@
         </div>
       </header>
 
-      <!-- Demo Info -->
+      <!-- Demo Navigation -->
       <div class="demo-info">
         <div class="container">
           <div class="demo-banner">
             <i class="fas fa-flask"></i>
-            <strong>Complete Socket Events Demo:</strong> This demonstrates all
-            socket events from the backend. Open multiple browser tabs to test
-            multiplayer functionality!
+            <strong>Head Ball Arena Demos:</strong> Choose between
+            authentication testing and game functionality testing
+          </div>
+          <div class="demo-navigation">
+            <a href="/" class="demo-link active">
+              <i class="fas fa-gamepad"></i>
+              <div>
+                <h3>Game Demo</h3>
+                <p>Test WebSocket gameplay, rooms, and multiplayer features</p>
+              </div>
+            </a>
+            <a href="/auth-demo.html" class="demo-link">
+              <i class="fas fa-shield-alt"></i>
+              <div>
+                <h3>Auth Demo</h3>
+                <p>Test SIWE authentication and protected API endpoints</p>
+              </div>
+            </a>
           </div>
         </div>
       </div>
@@ -50,6 +65,10 @@
               <div class="info-card">
                 <h3><i class="fas fa-wallet"></i> Player Connection</h3>
                 <div class="info-grid">
+                  <div class="info-item">
+                    <label>Auth Status:</label>
+                    <span id="authStatus">❌ Not Authenticated</span>
+                  </div>
                   <div class="info-item">
                     <label>Wallet:</label>
                     <span id="walletAddress">Not Connected</span>
@@ -69,11 +88,19 @@
                 </div>
                 <div class="button-group">
                   <button class="btn btn-primary" id="connectWalletBtn">
-                    <i class="fas fa-link"></i> Connect Wallet (Demo)
+                    <i class="fas fa-wallet"></i> Connect MetaMask
                   </button>
                   <button class="btn btn-secondary" id="joinGameBtn" disabled>
                     <i class="fas fa-sign-in-alt"></i> Join Game
                   </button>
+                </div>
+                <div class="auth-note">
+                  <small
+                    ><i class="fas fa-info-circle"></i> Connect your MetaMask
+                    wallet, then complete SIWE authentication to access game
+                    features. Authentication uses secure httpOnly
+                    cookies.</small
+                  >
                 </div>
               </div>
             </div>

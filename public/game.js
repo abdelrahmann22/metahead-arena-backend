@@ -90,11 +90,74 @@ class SocketEventDemo {
     this.setupEventListeners();
     this.setupKeyboardControls();
     this.startGameLoop();
+    this.checkExistingWalletConnection();
     this.logEvent("info", "Complete Socket Events Demo initialized");
     this.logEvent(
       "info",
       "Open multiple browser tabs to test multiplayer functionality"
     );
+  }
+
+  async checkExistingWalletConnection() {
+    try {
+      if (typeof window.ethereum !== "undefined") {
+        // Check if already connected to MetaMask
+        const accounts = await window.ethereum.request({
+          method: "eth_accounts",
+        });
+
+        if (accounts.length > 0) {
+          this.walletAddress = accounts[0];
+          this.updatePlayerInfo(
+            "walletAddress",
+            this.walletAddress.slice(0, 6) +
+              "..." +
+              this.walletAddress.slice(-4)
+          );
+          this.toggleButtonState("connectWalletBtn", true, "Connected");
+          this.logEvent(
+            "info",
+            `Existing wallet connection found: ${this.walletAddress}`
+          );
+
+          // Set up event listeners for account/network changes
+          this.setupWalletEventListeners();
+
+          // Check authentication status
+          this.checkAuthenticationStatus();
+        } else {
+          this.logEvent("info", "No existing wallet connection found");
+        }
+      } else {
+        this.logEvent("info", "MetaMask not installed");
+        this.updatePlayerInfo("walletAddress", "MetaMask not installed");
+      }
+    } catch (error) {
+      this.logEvent(
+        "error",
+        `Error checking wallet connection: ${error.message}`
+      );
+    }
+  }
+
+  setupWalletEventListeners() {
+    // Listen for account changes
+    window.ethereum.on("accountsChanged", (accounts) => {
+      if (accounts.length === 0) {
+        this.handleWalletDisconnected();
+      } else if (accounts[0] !== this.walletAddress) {
+        this.handleWalletChanged(accounts[0]);
+      }
+    });
+
+    // Listen for network changes
+    window.ethereum.on("chainChanged", (chainId) => {
+      this.logEvent("info", `Network changed to: ${chainId}`);
+      this.showToast(
+        "Network changed. You may need to re-authenticate.",
+        "warning"
+      );
+    });
   }
 
   // ============ SOCKET CONNECTION & EVENT HANDLERS ============
@@ -125,6 +188,27 @@ class SocketEventDemo {
       this.serverTime = new Date(data.serverTime);
       this.updatePlayerInfo("playerId", data.playerId);
       this.updatePlayerInfo("serverTime", this.formatTime(this.serverTime));
+
+      // Update authentication status
+      if (data.authenticated) {
+        this.updatePlayerInfo("authStatus", "✅ Authenticated");
+        if (data.walletAddress) {
+          this.walletAddress = data.walletAddress;
+          this.updatePlayerInfo(
+            "walletAddress",
+            data.walletAddress.slice(0, 6) +
+              "..." +
+              data.walletAddress.slice(-4)
+          );
+          this.toggleButtonState("connectWalletBtn", true, "Authenticated");
+        }
+      } else {
+        this.updatePlayerInfo("authStatus", "❌ Not Authenticated");
+        if (data.notice) {
+          this.showToast(data.notice, "warning");
+        }
+      }
+
       this.logEvent("socket", `Welcome message received`, data);
     });
 
@@ -821,33 +905,150 @@ class SocketEventDemo {
 
   // ============ ACTION METHODS ============
 
-  connectWallet() {
-    // Simulate wallet connection - generate valid 40-character hex address
-    let hexString = "";
-    for (let i = 0; i < 40; i++) {
-      hexString += Math.floor(Math.random() * 16).toString(16);
-    }
-    this.walletAddress = "0x" + hexString;
+  async connectWallet() {
+    try {
+      // Check if MetaMask is installed
+      if (typeof window.ethereum === "undefined") {
+        this.showToast(
+          "MetaMask is not installed. Please install MetaMask extension.",
+          "error"
+        );
+        this.logEvent("error", "MetaMask not found");
+        return;
+      }
 
+      this.logEvent("info", "Requesting wallet connection...");
+
+      // Request account access
+      const accounts = await window.ethereum.request({
+        method: "eth_requestAccounts",
+      });
+
+      if (accounts.length === 0) {
+        throw new Error("No accounts found");
+      }
+
+      this.walletAddress = accounts[0];
+
+      // Get network info
+      const chainId = await window.ethereum.request({
+        method: "eth_chainId",
+      });
+
+      this.updatePlayerInfo(
+        "walletAddress",
+        this.walletAddress.slice(0, 6) + "..." + this.walletAddress.slice(-4)
+      );
+      this.toggleButtonState("connectWalletBtn", true, "Connected");
+      this.logEvent("success", `Wallet connected: ${this.walletAddress}`);
+      this.logEvent("info", `Network: ${chainId}`);
+
+      // Set up event listeners
+      this.setupWalletEventListeners();
+
+      // Check if user is already authenticated
+      this.checkAuthenticationStatus();
+    } catch (error) {
+      this.logEvent("error", `Wallet connection failed: ${error.message}`);
+      this.showToast(`Connection failed: ${error.message}`, "error");
+    }
+  }
+
+  handleWalletDisconnected() {
+    this.walletAddress = null;
+    this.updatePlayerInfo("walletAddress", "Not Connected");
+    this.updatePlayerInfo("authStatus", "❌ Not Authenticated");
+    this.toggleButtonState("connectWalletBtn", false, "Connect Wallet");
+    this.logEvent("warning", "Wallet disconnected");
+    this.showToast("Wallet disconnected", "warning");
+  }
+
+  handleWalletChanged(newAddress) {
+    this.walletAddress = newAddress;
     this.updatePlayerInfo(
       "walletAddress",
-      this.walletAddress.slice(0, 6) + "..." + this.walletAddress.slice(-4)
+      newAddress.slice(0, 6) + "..." + newAddress.slice(-4)
     );
-    this.toggleButtonState("connectWalletBtn", true, "Connected");
-    this.logEvent("success", `Wallet connected: ${this.walletAddress}`);
+    this.updatePlayerInfo("authStatus", "❌ Not Authenticated");
+    this.logEvent("info", `Wallet changed to: ${newAddress}`);
+    this.showToast("Wallet changed. Please re-authenticate.", "warning");
+
+    // Check authentication status for new wallet
+    this.checkAuthenticationStatus();
+  }
+
+  async checkAuthenticationStatus() {
+    try {
+      this.logEvent("info", "Checking authentication status...");
+
+      const response = await fetch("/api/users/profile/test", {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include", // Include cookies
+      });
+
+      if (response.status === 404) {
+        // 404 means we're authenticated but user not found, which is fine for status check
+        this.updatePlayerInfo("authStatus", "✅ Authenticated");
+        this.logEvent("success", "User is authenticated");
+        this.showToast("Authentication verified!", "success");
+      } else if (response.status === 401 || response.status === 403) {
+        // Unauthorized means no valid session
+        this.updatePlayerInfo("authStatus", "❌ Not Authenticated");
+        this.showAuthenticationPrompt();
+      } else if (response.ok) {
+        // This shouldn't happen with test ID, but handle it
+        this.updatePlayerInfo("authStatus", "✅ Authenticated");
+        this.logEvent("success", "User is authenticated");
+        this.showToast("Authentication verified!", "success");
+      } else {
+        this.updatePlayerInfo("authStatus", "❌ Not Authenticated");
+        this.showAuthenticationPrompt();
+      }
+    } catch (error) {
+      this.updatePlayerInfo("authStatus", "❌ Not Authenticated");
+      this.showAuthenticationPrompt();
+    }
+  }
+
+  showAuthenticationPrompt() {
+    this.logEvent("warning", "Authentication required for game features");
+    this.showToast(
+      "Please complete SIWE authentication to access game features",
+      "warning"
+    );
+
+    // Show authentication link
+    this.showGameOverlay(
+      "Authentication Required",
+      "To play games, you need to complete Sign-In with Ethereum (SIWE) authentication."
+    );
+
+    // Add authentication button to overlay if not already present
+    setTimeout(() => {
+      const overlay = document.getElementById("gameOverlay");
+      if (overlay && !overlay.querySelector(".auth-link")) {
+        const overlayContent = overlay.querySelector(".overlay-content");
+        if (overlayContent) {
+          const authButton = document.createElement("button");
+          authButton.className = "btn btn-primary auth-link";
+          authButton.innerHTML =
+            '<i class="fas fa-shield-alt"></i> Authenticate with SIWE';
+          authButton.onclick = () => {
+            window.open("/auth-demo.html", "_blank");
+          };
+          overlayContent.appendChild(authButton);
+        }
+      }
+    }, 100);
   }
 
   joinGame() {
-    if (!this.walletAddress) {
-      this.showToast("Please connect wallet first", "error");
-      return;
-    }
-
-    this.socket.emit("join-game", {
-      walletAddress: this.walletAddress,
-    });
-
-    this.logEvent("socket", "Joining game...");
+    // No need to check wallet since authentication is handled by JWT cookies
+    this.socket.emit("join-game", {});
+    this.logEvent("socket", "Joining game with authenticated session...");
   }
 
   findMatch() {
@@ -1052,8 +1253,58 @@ class SocketEventDemo {
   }
 
   showToast(message, type = "info") {
-    // Simple toast notification (could be enhanced)
+    // Create toast notification
+    const toast = document.createElement("div");
+    toast.className = `toast toast-${type}`;
+
+    const icon = this.getToastIcon(type);
+    toast.innerHTML = `
+      <div class="toast-content">
+        <i class="${icon}"></i>
+        <span>${message}</span>
+      </div>
+    `;
+
+    // Add to toast container or create one
+    let toastContainer = document.getElementById("toastContainer");
+    if (!toastContainer) {
+      toastContainer = document.createElement("div");
+      toastContainer.id = "toastContainer";
+      toastContainer.className = "toast-container";
+      document.body.appendChild(toastContainer);
+    }
+
+    toastContainer.appendChild(toast);
+
+    // Show toast with animation
+    setTimeout(() => toast.classList.add("show"), 100);
+
+    // Auto-remove toast after 4 seconds
+    setTimeout(() => {
+      toast.classList.remove("show");
+      setTimeout(() => {
+        if (toast.parentNode) {
+          toast.parentNode.removeChild(toast);
+        }
+      }, 300);
+    }, 4000);
+
+    // Also log to console
     console.log(`[${type.toUpperCase()}] ${message}`);
+  }
+
+  getToastIcon(type) {
+    switch (type) {
+      case "success":
+        return "fas fa-check-circle";
+      case "error":
+        return "fas fa-exclamation-circle";
+      case "warning":
+        return "fas fa-exclamation-triangle";
+      case "info":
+      default:
+        return "fas fa-info-circle";
+    }
   }
 
   addToMatchHistory(match) {
@@ -1111,7 +1362,7 @@ class SocketEventDemo {
         element.innerHTML = `<i class="fas fa-check"></i> ${connectedText}`;
       } else {
         element.classList.remove("connected");
-        element.innerHTML = `<i class="fas fa-link"></i> Connect Wallet (Demo)`;
+        element.innerHTML = `<i class="fas fa-wallet"></i> Connect MetaMask`;
       }
     }
   }

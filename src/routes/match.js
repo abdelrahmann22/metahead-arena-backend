@@ -1,5 +1,6 @@
 const express = require("express");
 const matchController = require("../controllers/matchController");
+const { verifyLogin } = require("../middlewares/verify_login.middleware");
 
 const router = express.Router();
 
@@ -60,7 +61,11 @@ const router = express.Router();
  * GET /api/matches/user/:userId/history
  * Retrieve paginated match history for a specific user
  */
-router.get("/user/:userId/history", matchController.getUserMatchHistory);
+router.get(
+  "/user/:userId/history",
+  verifyLogin,
+  matchController.getUserMatchHistory
+);
 
 /**
  * @swagger
@@ -143,6 +148,7 @@ router.get("/user/:userId/history", matchController.getUserMatchHistory);
  */
 router.get(
   "/user/:userId/match/:matchId",
+  verifyLogin,
   matchController.getUserSpecificMatch
 );
 

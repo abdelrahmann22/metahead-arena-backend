@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const chestController = require("../controllers/chestController");
+const { verifyLogin } = require("../middlewares/verify_login.middleware");
 
 /**
  * @fileoverview Chest Management Routes
@@ -52,7 +53,7 @@ const chestController = require("../controllers/chestController");
  * GET /api/chests/:walletAddress
  * Retrieve user's chest inventory counts by wallet address
  */
-router.get("/:walletAddress", chestController.getUserChests);
+router.get("/:walletAddress", verifyLogin, chestController.getUserChests);
 
 /**
  * @swagger
@@ -109,7 +110,7 @@ router.get("/:walletAddress", chestController.getUserChests);
  * POST /api/chests/:walletAddress/add
  * Add chests to user's inventory (reward system)
  */
-router.post("/:walletAddress/add", chestController.addChests);
+router.post("/:walletAddress/add", verifyLogin, chestController.addChests);
 
 /**
  * @swagger
@@ -180,6 +181,6 @@ router.post("/:walletAddress/add", chestController.addChests);
  * POST /api/chests/:walletAddress/open
  * Open chests and receive rewards (consumes chest inventory)
  */
-router.post("/:walletAddress/open", chestController.openChests);
+router.post("/:walletAddress/open", verifyLogin, chestController.openChests);
 
 module.exports = router;

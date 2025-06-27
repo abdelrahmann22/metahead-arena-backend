@@ -29,6 +29,14 @@ const options = {
       },
     ],
     components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: "http",
+          scheme: "bearer",
+          bearerFormat: "JWT",
+          description: "JWT token obtained from /api/auth/verify endpoint",
+        },
+      },
       schemas: {
         User: {
           type: "object",
@@ -114,6 +122,56 @@ const options = {
             message: {
               type: "string",
               description: "Detailed error description",
+            },
+          },
+        },
+        AuthResponse: {
+          type: "object",
+          properties: {
+            success: {
+              type: "boolean",
+              description: "Whether the authentication was successful",
+              example: true,
+            },
+            message: {
+              type: "string",
+              description: "Success message",
+              example: "Authentication successful",
+            },
+            data: {
+              type: "object",
+              properties: {
+                token: {
+                  type: "string",
+                  description: "JWT authentication token",
+                  example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                },
+                address: {
+                  type: "string",
+                  description: "Verified Ethereum wallet address",
+                  example: "0x742d35Cc6634C0532925a3b8D",
+                },
+                user: {
+                  type: "object",
+                  properties: {
+                    id: {
+                      type: "string",
+                      description: "User database ID",
+                      example: "507f1f77bcf86cd799439011",
+                    },
+                    walletAddress: {
+                      type: "string",
+                      description: "User's wallet address",
+                      example: "0x742d35Cc6634C0532925a3b8D",
+                    },
+                    isNewUser: {
+                      type: "boolean",
+                      description: "Whether this is a new user registration",
+                      example: false,
+                    },
+                  },
+                },
+              },
             },
           },
         },
