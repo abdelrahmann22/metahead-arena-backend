@@ -34,7 +34,8 @@ const options = {
           type: "http",
           scheme: "bearer",
           bearerFormat: "JWT",
-          description: "JWT token obtained from /api/auth/verify endpoint",
+          description:
+            "JWT token obtained from /api/auth/verify endpoint. Store in localStorage and send in Authorization header as 'Bearer <token>'",
         },
       },
       schemas: {

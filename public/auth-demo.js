@@ -132,6 +132,7 @@ async function generateNonce() {
       headers: {
         "Content-Type": "application/json",
       },
+      credentials: "include", // REQUIRED for cross-origin cookies (Next.js -> Backend)
       body: JSON.stringify(siweMessageData),
     });
 
@@ -205,6 +206,7 @@ async function signAndVerify() {
       headers: {
         "Content-Type": "application/json",
       },
+      credentials: "include", // REQUIRED for cross-origin cookies (Next.js -> Backend)
       body: JSON.stringify({
         message: messageToSign,
         signature: signature,

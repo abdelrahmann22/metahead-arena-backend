@@ -13,26 +13,7 @@ const userService = require("../services/userService");
 
 // === Authentication Helpers ===
 
-/**
- * Parse cookies from socket handshake headers
- * @param {Object} headers - Socket handshake headers
- * @returns {Object} - Parsed cookies object
- */
-const parseCookies = (headers) => {
-  const cookies = {};
-  const cookieHeader = headers.cookie;
-
-  if (cookieHeader) {
-    cookieHeader.split(";").forEach((cookie) => {
-      const [name, value] = cookie.trim().split("=");
-      if (name && value) {
-        cookies[name] = decodeURIComponent(value);
-      }
-    });
-  }
-
-  return cookies;
-};
+// Removed parseCookies function as we're now using localStorage tokens
 
 /**
  * Verify JWT token from socket connection
@@ -41,8 +22,21 @@ const parseCookies = (headers) => {
  */
 const verifySocketAuth = (socket) => {
   try {
-    const cookies = parseCookies(socket.handshake.headers);
-    const token = cookies.authToken;
+    // Try to get token from query parameters first (recommended for WebSocket)
+    let token = socket.handshake.query.token;
+
+    // If not in query, try from auth object
+    if (!token && socket.handshake.auth && socket.handshake.auth.token) {
+      token = socket.handshake.auth.token;
+    }
+
+    // If not found, try from Authorization header (fallback)
+    if (!token) {
+      const authHeader = socket.handshake.headers.authorization;
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        token = authHeader.substring(7);
+      }
+    }
 
     if (!token) {
       return null;
@@ -719,18 +713,34 @@ const handleDeclineRematch = (socket, io) => {
 function initializeSocket(server) {
   const io = socketIo(server, {
     cors: {
-      origin:
-        process.env.NODE_ENV === "production"
-          ? process.env.FRONTEND_URL
-          : [
-              "http://localhost:3000",
-              "http://localhost:3001", // Next.js default port
-              "http://127.0.0.1:3000",
-              "http://127.0.0.1:3001",
-              "http://localhost:5500",
-            ],
-      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-      allowedHeaders: ["Content-Type", "Authorization"],
+      origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps)
+        if (!origin) return callback(null, true);
+
+        const allowedOrigins =
+          process.env.NODE_ENV === "production"
+            ? [process.env.FRONTEND_URL].filter(Boolean)
+            : [
+                "http://localhost:3000",
+                "http://localhost:3001", // Next.js default port
+                "http://127.0.0.1:3000",
+                "http://127.0.0.1:3001",
+                "http://localhost:5500",
+              ];
+
+        if (allowedOrigins.includes(origin)) {
+          return callback(null, true);
+        }
+
+        // For development, be more permissive
+        if (process.env.NODE_ENV !== "production") {
+          return callback(null, true);
+        }
+
+        return callback(new Error("Not allowed by CORS"));
+      },
+      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
       credentials: true, // Enable credentials for cookie authentication
     },
     pingTimeout: 60000,

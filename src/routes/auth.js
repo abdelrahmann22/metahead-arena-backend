@@ -8,13 +8,17 @@ const router = express.Router();
 // Rate limiting for auth endpoints (relaxed for development)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: process.env.NODE_ENV === "production" ? 10 : 100, // 100 for dev, 10 for production
+  max: process.env.NODE_ENV === "production" ? 10 : 1000, // Much higher for dev
   message: {
     success: false,
     message: "Too many authentication attempts, please try again later.",
   },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => {
+    // Skip rate limiting entirely for development
+    return process.env.NODE_ENV !== "production";
+  },
 });
 
 /**
@@ -204,8 +208,7 @@ router.post("/verify", authLimiter, authController.verifySignature);
  */
 /**
  * POST /api/auth/logout
- * Simple logout - just clear authentication cookies
- * No authentication required
+ * Clear authentication cookie
  */
 router.post("/logout", authController.logout);
 
