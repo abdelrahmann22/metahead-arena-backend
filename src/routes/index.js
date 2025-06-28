@@ -2,7 +2,7 @@ const express = require("express");
 const gameRoutes = require("./game");
 const userRoutes = require("./user");
 const matchRoutes = require("./match");
-const chestRoutes = require("./chest");
+
 const authRoutes = require("./auth");
 
 const router = express.Router();
@@ -17,7 +17,7 @@ const router = express.Router();
 router.use("/game", gameRoutes);
 router.use("/users", userRoutes);
 router.use("/matches", matchRoutes);
-router.use("/chests", chestRoutes);
+
 router.use("/auth", authRoutes);
 
 module.exports = router;

@@ -8,7 +8,7 @@ const mongoose = require("mongoose");
  * Lifespan: Permanent user accounts
  *
  * Features: Web3 wallet integration, match history,
- *          game statistics, chest rewards
+ *          game statistics
  *
  * Note: For temporary session data (Socket.IO), use Player model
  */
@@ -51,25 +51,6 @@ const userSchema = new mongoose.Schema(
         min: 0,
       },
       totalMatches: {
-        type: Number,
-        default: 0,
-        min: 0,
-      },
-    },
-
-    // Chest System
-    chests: {
-      common: {
-        type: Number,
-        default: 0,
-        min: 0,
-      },
-      rare: {
-        type: Number,
-        default: 0,
-        min: 0,
-      },
-      legendary: {
         type: Number,
         default: 0,
         min: 0,

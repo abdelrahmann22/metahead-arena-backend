@@ -63,14 +63,7 @@ const options = {
                 },
               },
             },
-            chests: {
-              type: "object",
-              properties: {
-                common: { type: "number" },
-                rare: { type: "number" },
-                legendary: { type: "number" },
-              },
-            },
+
             joinedAt: {
               type: "string",
               format: "date-time",
