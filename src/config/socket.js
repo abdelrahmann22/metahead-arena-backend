@@ -693,67 +693,88 @@ const handleRequestRematch = async (socket, io) => {
 
     if (!socket.userId) {
       console.warn(`Player ${socket.id} not authenticated for rematch`);
+      socket.emit("error", {
+        message: "Authentication required for rematch",
+        type: "AUTH_REQUIRED",
+      });
       return;
     }
 
     const player = gameService.getPlayer(socket.id);
-    if (!player.currentRoom) {
-      console.warn(`Player ${player.id} not in a room for rematch`);
+    if (!player || !player.currentRoom) {
+      console.warn(`Player ${socket.id} not in a room for rematch`);
+      socket.emit("error", {
+        message: "You must be in a room to request rematch",
+        type: "NOT_IN_ROOM",
+      });
       return;
     }
 
     const room = gameService.getRoom(player.currentRoom);
     if (!room) {
       console.warn(`Room ${player.currentRoom} not found for rematch`);
+      socket.emit("error", {
+        message: "Room not found",
+        type: "ROOM_NOT_FOUND",
+      });
       return;
     }
 
-    // Mark this player as requesting rematch
-    const roomPlayer = room.players.find((p) => p.id === player.id);
-    if (roomPlayer) {
-      roomPlayer.requestedRematch = true;
+    if (room.status !== "finished") {
+      console.warn(
+        `Room ${room.id} not finished, cannot rematch (status: ${room.status})`
+      );
+      socket.emit("error", {
+        message: "Game must be finished to request rematch",
+        type: "GAME_NOT_FINISHED",
+      });
+      return;
+    }
 
-      console.log(`[REMATCH] Player ${player.id} marked as requesting rematch`);
+    // Use the gameService rematch system which handles the roomManager
+    const rematchResult = gameService.requestRematch(socket.id);
 
-      // Notify other players about the rematch request
-      gameBroadcaster.broadcastToRoom(
-        room.id,
-        "rematch-requested",
-        {
-          requesterId: player.id,
-          requesterUsername: player.username,
-          message: `${player.username} wants a rematch!`,
-        },
-        player.id
-      ); // Exclude the requester
-
-      // Check if all players want a rematch
-      const allPlayersWantRematch = room.players.every(
-        (p) => p.requestedRematch
+    if (rematchResult.success) {
+      console.log(
+        `[REMATCH] ✅ Rematch request processed for ${player.username}`
       );
 
-      if (allPlayersWantRematch) {
-        console.log(`[REMATCH] All players want rematch in room ${room.id}`);
+      // Notify all players about the rematch request using direct socket emission
+      io.to(room.id).emit("rematch-requested", {
+        type: "rematch-requested",
+        requesterId: player.id,
+        requesterUsername: player.username,
+        requesterPosition: player.position,
+        message: `${player.username} wants a rematch!`,
+        rematchState: rematchResult.rematchState || {
+          player1Requested: player.position === "player1",
+          player2Requested: player.position === "player2",
+          timeoutActive: false,
+        },
+        timestamp: Date.now(),
+      });
 
-        // Reset room state for rematch
-        room.status = "waiting";
-        room.gameState = null;
+      // Check if this completed the rematch (both players requested)
+      if (rematchResult.bothRequested) {
+        console.log(
+          `[REMATCH] 🎮 Both players want rematch in room ${room.id} - executing automatic restart`
+        );
 
-        // Reset player states
-        room.players.forEach((p) => {
-          p.isReady = false;
-          p.requestedRematch = false;
-          p.score = 0;
-        });
-
-        // Broadcast rematch confirmed
-        gameBroadcaster.broadcastToRoom(room.id, "rematch-confirmed", {
-          message: "Rematch confirmed! Get ready for a new game!",
-          room: room.toJSON(),
-        });
-
-        console.log(`[REMATCH] Room ${room.id} reset for rematch`);
+        // The executeRematch method in gameService will handle:
+        // 1. Room reset
+        // 2. Auto-ready both players
+        // 3. Auto-start new game
+        // 4. Broadcast events
+        // This was already called by gameService.requestRematch() when bothRequested is true
       }
+    } else {
+      console.error(
+        `[REMATCH] ❌ Failed to process rematch request: ${rematchResult.reason}`
+      );
+      socket.emit("error", {
+        message: rematchResult.reason || "Failed to request rematch",
+        type: "REMATCH_ERROR",
+      });
     }
   } catch (error) {
     console.error("Error in handleRequestRematch:", error);
@@ -795,11 +816,13 @@ const handleDeclineRematch = async (socket, io) => {
     if (roomPlayer) {
       roomPlayer.requestedRematch = false;
 
-      // Broadcast rematch declined to all players
-      gameBroadcaster.broadcastToRoom(room.id, "rematch-declined", {
+      // Broadcast rematch declined to all players using direct socket emission
+      io.to(room.id).emit("rematch-declined", {
+        type: "rematch-declined",
         declinerId: player.id,
         declinerUsername: player.username,
         message: `${player.username} declined the rematch`,
+        timestamp: Date.now(),
       });
 
       console.log(

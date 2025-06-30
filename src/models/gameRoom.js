@@ -10,8 +10,9 @@
  * Note: For persistent match data, use Match model
  */
 class GameRoom {
-  constructor(roomId) {
+  constructor(roomId, code = null) {
     this.id = roomId;
+    this.code = code || null; // Room join code
     this.players = [];
     this.maxPlayers = 2;
     this.status = "waiting"; // waiting, playing, finished, paused
@@ -165,6 +166,19 @@ class GameRoom {
    * @returns {Object} Serialized room data
    */
   toJSON() {
+    // Ensure gameState is never null - reinitialize if needed
+    if (!this.gameState) {
+      console.warn(`GameRoom ${this.id}: gameState was null, reinitializing`);
+      this.gameState = {
+        score: { player1: 0, player2: 0 },
+        gameTime: 60,
+        isActive: false,
+        isPaused: false,
+        lastGoal: null,
+        gameEvents: [],
+      };
+    }
+
     return {
       id: this.id,
       code: this.code, // Include room code for sharing
@@ -172,14 +186,21 @@ class GameRoom {
       maxPlayers: this.maxPlayers,
       status: this.status,
 
-      // Game state data
+      // Game state data with null safety
       gameState: {
-        score: this.gameState.score,
-        gameTime: this.gameState.gameTime,
-        isActive: this.gameState.isActive,
-        isPaused: this.gameState.isPaused,
-        lastGoal: this.gameState.lastGoal,
-        gameEvents: this.gameState.gameEvents,
+        score: this.gameState?.score || { player1: 0, player2: 0 },
+        gameTime: this.gameState?.gameTime || 60,
+        isActive: this.gameState?.isActive || false,
+        isPaused: this.gameState?.isPaused || false,
+        lastGoal: this.gameState?.lastGoal || null,
+        gameEvents: this.gameState?.gameEvents || [],
+      },
+
+      // Rematch state for UI display
+      rematchState: {
+        player1Requested: this.rematchState?.player1Requested || false,
+        player2Requested: this.rematchState?.player2Requested || false,
+        timeoutActive: this.rematchState?.timeoutActive || false,
       },
 
       settings: this.settings,

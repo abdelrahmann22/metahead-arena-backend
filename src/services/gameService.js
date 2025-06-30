@@ -397,6 +397,12 @@ class GameService {
         // Only log room status every 5 seconds to reduce spam, unless there's a status change
         const shouldLog = now - lastLogTime > 5000;
 
+        // Add null checks for room.gameState
+        if (!room || !room.gameState) {
+          console.warn(`Room ${roomId} has null gameState, skipping`);
+          return;
+        }
+
         // Only start loops for actively playing games
         if (
           room.gameState.isActive &&
@@ -613,8 +619,59 @@ class GameService {
       // Stop the rematch timer since players agreed to rematch
       this.stopRematchTimer(roomId);
 
-      // Broadcast rematch confirmation
+      // Get the room for further operations
+      const room = this.getRoom(roomId);
+      if (!room) {
+        console.error(`Room ${roomId} not found during rematch execution`);
+        return { success: false, reason: "Room not found" };
+      }
+
+      console.log(`🔄 Executing rematch for room ${roomId}`);
+
+      // Broadcast rematch confirmation first
       gameBroadcaster.broadcastRematchConfirmed(roomId, result.room);
+
+      // Auto-ready both players for immediate restart
+      room.players.forEach((player) => {
+        player.isReady = true;
+        console.log(`Auto-readying player ${player.username} for rematch`);
+      });
+
+      // Automatically start the new game after a brief delay
+      setTimeout(() => {
+        if (room.canStart()) {
+          console.log(`🚀 Auto-starting rematch game for room ${roomId}`);
+
+          const startResult = this.startGame(roomId);
+          if (startResult.success) {
+            // Broadcast that the rematch game has started
+            gameBroadcaster.broadcastGameStarted(roomId, {
+              message: "Rematch started! Good luck!",
+              room: startResult.room.toJSON(),
+              matchDuration: startResult.room.settings.rules.matchDuration,
+              isRematch: true,
+            });
+
+            console.log(
+              `✅ Rematch game started successfully for room ${roomId}`
+            );
+          } else {
+            console.error(
+              `❌ Failed to start rematch game: ${startResult.reason}`
+            );
+            gameBroadcaster.broadcastRoomError(roomId, {
+              message: `Failed to start rematch: ${startResult.reason}`,
+              type: "REMATCH_START_ERROR",
+            });
+          }
+        } else {
+          console.error(`❌ Room ${roomId} cannot start rematch game`);
+          gameBroadcaster.broadcastRoomError(roomId, {
+            message: "Cannot start rematch - room not ready",
+            type: "REMATCH_START_ERROR",
+          });
+        }
+      }, 2000); // 2-second delay for UI transition
     }
     return result;
   }

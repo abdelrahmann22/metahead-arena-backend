@@ -60,8 +60,7 @@ class RoomManagerService {
     const roomId = this.generateRoomId();
     const roomCode = this.generateRoomCode();
 
-    const room = new GameRoom(roomId);
-    room.code = roomCode;
+    const room = new GameRoom(roomId, roomCode);
 
     // Apply any custom room settings
     if (roomData.maxPlayers) room.maxPlayers = roomData.maxPlayers;
