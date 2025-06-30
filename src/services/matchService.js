@@ -24,14 +24,21 @@ class MatchService {
             user: player1Data.userId,
             position: "player1",
             goals: 0,
+            walletAddress: player1Data.walletAddress,
           },
           {
             user: player2Data.userId,
             position: "player2",
             goals: 0,
+            walletAddress: player2Data.walletAddress,
           },
         ],
         status: "waiting",
+        // Initialize result with wallet addresses for easy access
+        result: {
+          player1WalletAddress: player1Data.walletAddress,
+          player2WalletAddress: player2Data.walletAddress,
+        },
       });
 
       await match.save();
@@ -67,7 +74,7 @@ class MatchService {
   /**
    * End match (for Socket.IO)
    */
-  async endMatch(matchId, finalScore, duration) {
+  async endMatch(matchId, finalScore, duration, walletData = {}) {
     try {
       const match = await Match.findById(matchId).populate("players.user");
 
@@ -81,19 +88,33 @@ class MatchService {
       match.result.finalScore = finalScore;
       match.result.duration = duration;
 
+      // Get wallet addresses (use provided data or fallback to user data)
+      const player1WalletAddress =
+        walletData.player1WalletAddress || match.players[0].user.walletAddress;
+      const player2WalletAddress =
+        walletData.player2WalletAddress || match.players[1].user.walletAddress;
+
+      // Store wallet addresses in result
+      match.result.player1WalletAddress = player1WalletAddress;
+      match.result.player2WalletAddress = player2WalletAddress;
+
       // Determine winner and outcome
       let winner = null;
+      let winnerWalletAddress = null;
       let outcome = "draw";
 
       if (finalScore.player1 > finalScore.player2) {
-        winner = match.players[0].user.walletAddress;
+        winner = match.players[0].user._id;
+        winnerWalletAddress = player1WalletAddress;
         outcome = "player1_wins";
       } else if (finalScore.player2 > finalScore.player1) {
-        winner = match.players[1].user.walletAddress;
+        winner = match.players[1].user._id;
+        winnerWalletAddress = player2WalletAddress;
         outcome = "player2_wins";
       }
 
       match.result.winner = winner;
+      match.result.winnerWalletAddress = winnerWalletAddress;
       match.result.outcome = outcome;
 
       // Update player goals in match

@@ -29,7 +29,10 @@ const matchSchema = new mongoose.Schema(
           ref: "User",
           required: true,
         },
-
+        walletAddress: {
+          type: String,
+          required: true,
+        },
         position: {
           type: String,
           enum: ["player1", "player2"],
@@ -49,6 +52,18 @@ const matchSchema = new mongoose.Schema(
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
         default: null, // Null for draw
+      },
+      winnerWalletAddress: {
+        type: String,
+        default: null, // Null for draw
+      },
+      player1WalletAddress: {
+        type: String,
+        required: false, // Set during match creation
+      },
+      player2WalletAddress: {
+        type: String,
+        required: false, // Set during match creation
       },
       finalScore: {
         player1: {

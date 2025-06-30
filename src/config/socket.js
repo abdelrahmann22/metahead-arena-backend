@@ -337,12 +337,18 @@ const handlePlayerReady = async (socket, io) => {
       if (canStart) {
         const startResult = gameService.startGame(room.id);
         if (startResult.success) {
-          // Create match in database
+          // Create match in database with wallet addresses
           try {
             const [player1, player2] = room.players;
             const matchResult = await matchService.createMatch(
-              { userId: player1.userId },
-              { userId: player2.userId }
+              {
+                userId: player1.userId,
+                walletAddress: player1.walletAddress,
+              },
+              {
+                userId: player2.userId,
+                walletAddress: player2.walletAddress,
+              }
             );
 
             if (matchResult.success) {
@@ -403,12 +409,17 @@ const handleGameEnd = async (socket, io, data) => {
     const matchResult = await matchService.endMatch(
       room.matchId,
       data.finalScore,
-      data.duration
+      data.duration,
+      {
+        player1WalletAddress: room.players[0]?.walletAddress,
+        player2WalletAddress: room.players[1]?.walletAddress,
+      }
     );
     if (matchResult.success) {
       // Update user stats
       const [player1, player2] = room.players;
       const winner = matchResult.match.result.winner;
+      const winnerWalletAddress = matchResult.match.result.winnerWalletAddress;
 
       const updateStats = async (player, isWinner) => {
         if (player.userId) {
@@ -432,6 +443,9 @@ const handleGameEnd = async (socket, io, data) => {
         duration: data.duration,
         matchId: room.matchId,
         winner: winner,
+        winnerWalletAddress: winnerWalletAddress,
+        player1WalletAddress: room.players[0]?.walletAddress,
+        player2WalletAddress: room.players[1]?.walletAddress,
       });
     }
   } catch (error) {
@@ -662,6 +676,70 @@ const handleLeaveRoom = (socket, io) => {
       message: "Failed to leave room",
       type: "SERVER_ERROR",
     });
+  }
+};
+
+/**
+ * Handle powerup spawned by any player
+ * @param {Socket} socket - Socket.IO socket instance
+ * @param {Server} io - Socket.IO server instance
+ * @param {Object} data - Powerup spawn data
+ */
+const handlePowerupSpawned = (socket, io, data) => {
+  try {
+    const player = gameService.getPlayer(socket.id);
+    if (!player || !player.currentRoom) {
+      return;
+    }
+
+    const room = gameService.getRoom(player.currentRoom);
+    if (!room || !room.gameState.isActive) {
+      return;
+    }
+
+    console.log(`[POWERUP] ${player.position} spawned powerup:`, data);
+
+    // Relay powerup spawn to other players in the room
+    socket.to(room.id).emit("powerup-spawned", {
+      id: data.id,
+      x: data.x,
+      y: data.y,
+      type: data.type,
+      timestamp: data.timestamp,
+    });
+  } catch (error) {
+    console.error("Error in handlePowerupSpawned:", error);
+  }
+};
+
+/**
+ * Handle powerup collected by any player
+ * @param {Socket} socket - Socket.IO socket instance
+ * @param {Server} io - Socket.IO server instance
+ * @param {Object} data - Powerup collection data
+ */
+const handlePowerupCollected = (socket, io, data) => {
+  try {
+    const player = gameService.getPlayer(socket.id);
+    if (!player || !player.currentRoom) {
+      return;
+    }
+
+    const room = gameService.getRoom(player.currentRoom);
+    if (!room || !room.gameState.isActive) {
+      return;
+    }
+
+    console.log(`[POWERUP] ${player.position} collected powerup:`, data);
+
+    // Relay powerup collection to other players in the room
+    socket.to(room.id).emit("powerup-collected", {
+      id: data.id,
+      collectorPosition: data.collectorPosition,
+      timestamp: data.timestamp,
+    });
+  } catch (error) {
+    console.error("Error in handlePowerupCollected:", error);
   }
 };
 
@@ -968,6 +1046,15 @@ function initializeSocket(server) {
     // === Player Position Synchronization ===
     socket.on("player-position", (data) => {
       handlePlayerPosition(socket, io, data);
+    });
+
+    // === Powerup Synchronization ===
+    socket.on("powerup-spawned", (data) => {
+      handlePowerupSpawned(socket, io, data);
+    });
+
+    socket.on("powerup-collected", (data) => {
+      handlePowerupCollected(socket, io, data);
     });
 
     // === Connection Management ===
