@@ -102,6 +102,7 @@ class GameBroadcaster {
       type: "player-ready",
       playerId: readyData.playerId,
       username: readyData.username,
+      playerPosition: readyData.playerPosition, // Include the playerPosition field
       isReady: readyData.isReady,
       allPlayersReady: readyData.allPlayersReady,
       room: readyData.room,
@@ -267,6 +268,87 @@ class GameBroadcaster {
       serverUptime: gameStats.serverUptime,
       timestamp: gameStats.timestamp,
     });
+  }
+
+  /**
+   * Broadcast timer update
+   */
+  broadcastTimerUpdate(roomId, timerData) {
+    if (!this.io) return;
+
+    this.io.to(roomId).emit("timer-update", {
+      type: "timer-update",
+      gameTime: timerData.gameTime,
+      timeRemaining: timerData.timeRemaining,
+      elapsedTime: timerData.elapsedTime,
+      timestamp: timerData.timestamp || Date.now(),
+    });
+  }
+
+  /**
+   * Broadcast timer warning (low time, etc.)
+   */
+  broadcastTimerWarning(roomId, warningData) {
+    if (!this.io) return;
+
+    this.io.to(roomId).emit("timer-warning", {
+      type: "timer-warning",
+      warning: warningData.warning,
+      timeRemaining: warningData.timeRemaining,
+      message: warningData.message,
+      timestamp: Date.now(),
+    });
+  }
+
+  /**
+   * Broadcast time up event
+   */
+  broadcastTimeUp(roomId, timeUpData) {
+    if (!this.io) return;
+
+    this.io.to(roomId).emit("time-up", {
+      type: "time-up",
+      message: timeUpData.message,
+      finalTime: timeUpData.finalTime,
+      timestamp: timeUpData.timestamp || Date.now(),
+    });
+  }
+
+  /**
+   * Broadcast game time update (more detailed than timer-update)
+   */
+  broadcastGameTimeUpdate(roomId, gameTimeData) {
+    if (!this.io) return;
+
+    this.io.to(roomId).emit("game-time", {
+      type: "game-time",
+      gameTime: gameTimeData.gameTime,
+      timeRemaining: gameTimeData.timeRemaining,
+      elapsedTime: gameTimeData.elapsedTime,
+      matchDuration: gameTimeData.matchDuration,
+      timestamp: gameTimeData.timestamp || Date.now(),
+    });
+  }
+
+  /**
+   * Broadcast any event to a room (generic broadcast method)
+   * @param {string} roomId - Room ID to broadcast to
+   * @param {string} eventName - Event name to emit
+   * @param {object} data - Data to broadcast
+   * @param {string} [excludeSocketId] - Socket ID to exclude from broadcast
+   */
+  broadcastToRoom(roomId, eventName, data, excludeSocketId = null) {
+    if (!this.io) return;
+
+    console.log(`Broadcasting ${eventName} to room ${roomId}:`, data);
+
+    if (excludeSocketId) {
+      // Broadcast to all sockets in room except the excluded one
+      this.io.to(roomId).except(excludeSocketId).emit(eventName, data);
+    } else {
+      // Broadcast to all sockets in room
+      this.io.to(roomId).emit(eventName, data);
+    }
   }
 
   /**

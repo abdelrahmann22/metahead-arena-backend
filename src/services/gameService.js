@@ -281,16 +281,63 @@ class GameService {
     }
 
     // Update game timer
+    const previousTime = room.gameState.gameTime;
     room.gameState.gameTime -= deltaTime / 1000;
+
+    // Ensure timer doesn't go negative
+    if (room.gameState.gameTime < 0) {
+      room.gameState.gameTime = 0;
+    }
+
+    // Send timer updates every second or when time changes significantly
+    const shouldSendTimerUpdate =
+      Math.floor(previousTime) !== Math.floor(room.gameState.gameTime) ||
+      room.gameState.gameTime <= 0;
+
+    if (shouldSendTimerUpdate) {
+      // Send dedicated timer update
+      gameBroadcaster.broadcastTimerUpdate(roomId, {
+        gameTime: room.gameState.gameTime,
+        timeRemaining: room.gameState.gameTime,
+        elapsedTime: 60 - room.gameState.gameTime, // Assuming 60s match
+        timestamp: Date.now(),
+      });
+
+      // Send timer warnings
+      if (room.gameState.gameTime <= 30 && room.gameState.gameTime > 29) {
+        gameBroadcaster.broadcastTimerWarning(roomId, {
+          warning: "low-time",
+          timeRemaining: room.gameState.gameTime,
+          message: "30 seconds remaining!",
+        });
+      } else if (room.gameState.gameTime <= 10 && room.gameState.gameTime > 9) {
+        gameBroadcaster.broadcastTimerWarning(roomId, {
+          warning: "critical-time",
+          timeRemaining: room.gameState.gameTime,
+          message: "10 seconds remaining!",
+        });
+      }
+    }
 
     // Check if game should end
     if (room.gameState.gameTime <= 0) {
-      room.gameState.gameTime = 0;
       console.log(`Time's up! Ending game for room ${roomId}`);
-      return this.endGameByTime(room);
+
+      // Send time-up event first
+      gameBroadcaster.broadcastTimeUp(roomId, {
+        message: "Time's up!",
+        finalTime: 0,
+        timestamp: Date.now(),
+      });
+
+      // End the game and return the result
+      const gameResult = this.endGameByTime(room);
+      console.log(`Game ended by time for room ${roomId}:`, gameResult);
+
+      return gameResult;
     }
 
-    // Broadcast basic game state
+    // Broadcast basic game state (less frequently to reduce spam)
     gameBroadcaster.broadcastGameState(roomId, {
       room: room,
       gameState: room.gameState,
@@ -414,7 +461,7 @@ class GameService {
 
         const result = await this.updateGameState(roomId, deltaTime);
 
-        // If game ended, stop the loop
+        // If game ended, stop the loop and handle end game
         if (result && result.type === "game-ended") {
           console.log(`Game ended for room ${roomId}, processing...`);
 
@@ -428,6 +475,7 @@ class GameService {
           // Save match to database after game status is set to finished
           await this.saveMatchAfterGameEnd(room, result);
 
+          // CRITICAL: Broadcast game end event to trigger rematch UI
           gameBroadcaster.broadcastGameEnd(roomId, result);
 
           // Start rematch decision timer (3 minutes)

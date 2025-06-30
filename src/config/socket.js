@@ -327,6 +327,7 @@ const handlePlayerReady = async (socket, io) => {
       gameBroadcaster.broadcastPlayerReady(room.id, {
         playerId: player.id,
         username: player.username,
+        playerPosition: player.position, // Add the missing playerPosition field
         isReady: player.isReady,
         allPlayersReady: canStart,
         room: room.toJSON(),
@@ -566,18 +567,52 @@ const handlePlayerPosition = (socket, io, data) => {
   try {
     const player = gameService.getPlayer(socket.id);
     if (!player || !player.currentRoom) {
+      console.log(`[POSITION] Player ${socket.id} not found or not in room`);
       return;
     }
 
     const room = gameService.getRoom(player.currentRoom);
     if (!room || !room.gameState.isActive) {
+      console.log(
+        `[POSITION] Room ${
+          player.currentRoom
+        } not found or game not active. Room: ${!!room}, Active: ${
+          room?.gameState.isActive
+        }`
+      );
       return;
     }
 
-    // Validate that player is sending their own position
+    // CRITICAL: Validate that player is sending their own position
+    console.log(`[POSITION] Position validation:`, {
+      socketId: socket.id,
+      playerStoredPosition: player.position,
+      dataSentPosition: data.position,
+      match: player.position === data.position,
+      timestamp: new Date().toISOString(),
+    });
+
     if (player.position !== data.position) {
+      console.warn(`[POSITION] ❌ POSITION MISMATCH DETECTED!`, {
+        socketId: socket.id,
+        playerStoredPosition: player.position,
+        dataSentPosition: data.position,
+        reason: "Frontend-backend position assignment mismatch",
+        action: "Position update REJECTED",
+      });
       return;
     }
+
+    console.log(
+      `[POSITION] ✅ Position update accepted for ${player.position}:`,
+      {
+        socketId: socket.id,
+        x: data.player?.x,
+        y: data.player?.y,
+        velocityX: data.player?.velocityX,
+        velocityY: data.player?.velocityY,
+      }
+    );
 
     // Relay player position to other players in the room
     socket.to(room.id).emit("player-position", {
@@ -585,6 +620,12 @@ const handlePlayerPosition = (socket, io, data) => {
       player: data.player,
       timestamp: data.timestamp,
     });
+
+    console.log(
+      `[POSITION] Position broadcasted to room ${room.id} (${
+        room.players.length - 1
+      } other players)`
+    );
   } catch (error) {
     console.error("Error in handlePlayerPosition:", error);
   }
@@ -646,30 +687,73 @@ const handleDisconnect = (socket, io) => {
  * @param {Socket} socket - Socket.IO socket instance
  * @param {Server} io - Socket.IO server instance
  */
-const handleRequestRematch = (socket, io) => {
+const handleRequestRematch = async (socket, io) => {
   try {
-    const result = gameService.requestRematch(socket.id);
-    if (result.success) {
-      if (result.bothRequested) {
-        const room = gameService.getRoom(result.room.id);
-        if (room?.status === "waiting") {
-          gameBroadcaster.broadcastRematchConfirmed(
-            result.room.id,
-            room.toJSON()
-          );
-        }
-      } else {
-        gameBroadcaster.broadcastRematchRequest(
-          result.room.id,
-          result.player,
-          result.rematchState
-        );
+    console.log(`[REMATCH] Player ${socket.id} requested rematch`);
+
+    if (!socket.userId) {
+      console.warn(`Player ${socket.id} not authenticated for rematch`);
+      return;
+    }
+
+    const player = gameService.getPlayer(socket.id);
+    if (!player.currentRoom) {
+      console.warn(`Player ${player.id} not in a room for rematch`);
+      return;
+    }
+
+    const room = gameService.getRoom(player.currentRoom);
+    if (!room) {
+      console.warn(`Room ${player.currentRoom} not found for rematch`);
+      return;
+    }
+
+    // Mark this player as requesting rematch
+    const roomPlayer = room.players.find((p) => p.id === player.id);
+    if (roomPlayer) {
+      roomPlayer.requestedRematch = true;
+
+      console.log(`[REMATCH] Player ${player.id} marked as requesting rematch`);
+
+      // Notify other players about the rematch request
+      gameBroadcaster.broadcastToRoom(
+        room.id,
+        "rematch-requested",
+        {
+          requesterId: player.id,
+          requesterUsername: player.username,
+          message: `${player.username} wants a rematch!`,
+        },
+        player.id
+      ); // Exclude the requester
+
+      // Check if all players want a rematch
+      const allPlayersWantRematch = room.players.every(
+        (p) => p.requestedRematch
+      );
+
+      if (allPlayersWantRematch) {
+        console.log(`[REMATCH] All players want rematch in room ${room.id}`);
+
+        // Reset room state for rematch
+        room.status = "waiting";
+        room.gameState = null;
+
+        // Reset player states
+        room.players.forEach((p) => {
+          p.isReady = false;
+          p.requestedRematch = false;
+          p.score = 0;
+        });
+
+        // Broadcast rematch confirmed
+        gameBroadcaster.broadcastToRoom(room.id, "rematch-confirmed", {
+          message: "Rematch confirmed! Get ready for a new game!",
+          room: room.toJSON(),
+        });
+
+        console.log(`[REMATCH] Room ${room.id} reset for rematch`);
       }
-    } else {
-      socket.emit("error", {
-        message: result.reason,
-        type: "REMATCH_ERROR",
-      });
     }
   } catch (error) {
     console.error("Error in handleRequestRematch:", error);
@@ -685,15 +769,46 @@ const handleRequestRematch = (socket, io) => {
  * @param {Socket} socket - Socket.IO socket instance
  * @param {Server} io - Socket.IO server instance
  */
-const handleDeclineRematch = (socket, io) => {
+const handleDeclineRematch = async (socket, io) => {
   try {
-    const result = gameService.declineRematch(socket.id);
-    if (result.success) {
-      gameBroadcaster.broadcastRematchDeclined(result.room.id, result.player);
-    } else {
-      socket.emit("error", {
-        message: result.reason,
-        type: "REMATCH_ERROR",
+    console.log(`[REMATCH] Player ${socket.id} declined rematch`);
+
+    if (!socket.userId) {
+      console.warn(`Player ${socket.id} not authenticated for rematch decline`);
+      return;
+    }
+
+    const player = gameService.getPlayer(socket.id);
+    if (!player.currentRoom) {
+      console.warn(`Player ${player.id} not in a room for rematch decline`);
+      return;
+    }
+
+    const room = gameService.getRoom(player.currentRoom);
+    if (!room) {
+      console.warn(`Room ${player.currentRoom} not found for rematch decline`);
+      return;
+    }
+
+    // Mark this player as declining rematch
+    const roomPlayer = room.players.find((p) => p.id === player.id);
+    if (roomPlayer) {
+      roomPlayer.requestedRematch = false;
+
+      // Broadcast rematch declined to all players
+      gameBroadcaster.broadcastToRoom(room.id, "rematch-declined", {
+        declinerId: player.id,
+        declinerUsername: player.username,
+        message: `${player.username} declined the rematch`,
+      });
+
+      console.log(
+        `[REMATCH] Rematch declined by ${player.id} in room ${room.id}`
+      );
+
+      // Reset all rematch requests since one player declined
+      room.players.forEach((p) => {
+        p.requestedRematch = false;
       });
     }
   } catch (error) {

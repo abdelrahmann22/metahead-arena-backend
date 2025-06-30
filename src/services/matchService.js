@@ -86,10 +86,10 @@ class MatchService {
       let outcome = "draw";
 
       if (finalScore.player1 > finalScore.player2) {
-        winner = match.players[0].user._id;
+        winner = match.players[0].user.walletAddress;
         outcome = "player1_wins";
       } else if (finalScore.player2 > finalScore.player1) {
-        winner = match.players[1].user._id;
+        winner = match.players[1].user.walletAddress;
         outcome = "player2_wins";
       }
 
@@ -133,7 +133,7 @@ class MatchService {
         };
 
         // Update match stats
-        await userService.updateUserMatchStats(user._id, matchResult);
+        await userService.updateUserMatchStats(user.walletAddress, matchResult);
 
         // Add match to user's history
         await User.findByIdAndUpdate(user._id, {
