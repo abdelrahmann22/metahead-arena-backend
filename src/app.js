@@ -19,6 +19,9 @@ const routes = require("./routes");
 const app = express();
 const server = http.createServer(app);
 
+// Trust proxy for rate limiting and IP detection (important for Docker/proxy environments)
+app.set("trust proxy", 1);
+
 // Connect to database first
 connectDatabase();
 
@@ -41,6 +44,8 @@ const limiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  // Handle proxy environments properly
+  trustProxy: true,
   skip: (req) => {
     // Skip rate limiting for development
     return process.env.NODE_ENV !== "production";
@@ -52,29 +57,29 @@ app.use("/api", limiter);
 app.use(
   cors({
     origin: function (origin, callback) {
-      // Allow requests with no origin (like mobile apps or curl requests)
+      // Allow requests with no origin (like mobile apps, curl requests, or server-to-server)
       if (!origin) return callback(null, true);
 
-      const allowedOrigins =
-        process.env.NODE_ENV === "production"
-          ? [process.env.FRONTEND_URL].filter(Boolean)
-          : [
-              "http://localhost:3000",
-              "http://localhost:3001", // Next.js default port
-              "http://127.0.0.1:3000",
-              "http://127.0.0.1:3001",
-              "http://localhost:5500",
-            ];
+      // In development, allow all origins
+      if (process.env.NODE_ENV !== "production") {
+        return callback(null, true);
+      }
+
+      // Production: check against allowed origins
+      const allowedOrigins = [process.env.FRONTEND_URL].filter(Boolean);
+
+      if (allowedOrigins.length === 0) {
+        // If no FRONTEND_URL is set in production, log warning but allow
+        console.warn("Warning: No FRONTEND_URL set in production environment");
+        return callback(null, true);
+      }
 
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
 
-      // For development, be more permissive
-      if (process.env.NODE_ENV !== "production") {
-        return callback(null, true);
-      }
-
+      // In production, reject unrecognized origins
+      console.warn(`CORS rejected origin: ${origin}`);
       return callback(new Error("Not allowed by CORS"));
     },
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
@@ -170,6 +175,15 @@ app.use("*", (req, res) => {
 
 // Global error handling middleware
 app.use((err, req, res, next) => {
+  // Don't log expected CORS errors as unhandled errors
+  if (err.message === "Not allowed by CORS") {
+    return res.status(403).json({
+      error: "CORS policy violation",
+      message: "Origin not allowed",
+    });
+  }
+
+  // Log genuine unhandled errors
   console.error("Unhandled error:", err);
 
   const isDevelopment = process.env.NODE_ENV === "development";
