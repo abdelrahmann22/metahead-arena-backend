@@ -41,7 +41,12 @@
     "socket.io": "^4.7.5",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "colyseus": "^0.15.17",
+    "@colyseus/schema": "^2.0.34",
+    "@colyseus/monitor": "^0.15.9",
+    "@colyseus/express": "^0.15.6",
+    "kalm-js": "^1.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.3"

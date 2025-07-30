@@ -12,6 +12,7 @@ require("dotenv").config();
 const { connectDatabase } = require("./config/database");
 const { initializeSocket } = require("./config/socket");
 const { specs, swaggerUi } = require("./config/swagger");
+const { MigrationIntegration } = require('./colyseus/integration');
 
 // Import routes
 const routes = require("./routes");
@@ -150,6 +151,17 @@ if (process.env.NODE_ENV === "production") {
     );
 
     next();
+  });
+}
+
+// === Colyseus Integration (Migration Phase) ===
+const migrationIntegration = new MigrationIntegration(app);
+
+// Initialize Colyseus if enabled
+if (process.env.COLYSEUS_ENABLED === 'true') {
+  console.log('[APP] Initializing Colyseus for migration...');
+  migrationIntegration.initializeColyseus().catch(error => {
+    console.error('[APP] Failed to initialize Colyseus:', error);
   });
 }
 
